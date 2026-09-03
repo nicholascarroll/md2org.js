@@ -1,0 +1,14 @@
+{
+  "name": "md2org",
+  "version": "1.0.0",
+  "description": "One-way Markdown to Org mode converter.",
+  "bin": { "md2org": "bin/md2org" },
+  "main": "src/md2org.js",
+  "scripts": {
+    "test": "node test/spec.js",
+    "build": "node build.js"
+  },
+  "files": ["src", "bin", "README.md", "LICENSE"],
+  "license": "MIT",
+  "keywords": ["markdown", "org-mode", "org", "converter", "shortcuts", "cli"]
+}

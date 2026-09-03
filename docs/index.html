@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>md2org</title>
+<meta name="description" content="Convert Markdown to Org mode in your browser. Nothing is uploaded; conversion happens entirely on your device.">
+<style>
+  :root {
+    --paper: #fbfaf7;
+    --ink: #23211c;
+    --faint: #8a857a;
+    --rule: #e3ded3;
+    --src: #f2efe7;      /* the "before" surface */
+    --dst: #eef2ec;      /* the "after" surface, a shade greener */
+    --accent: #4a6b3d;   /* org-agenda green, muted */
+    --focus: #7a9a6b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #1a1917;
+      --ink: #e8e4da;
+      --faint: #8f8a7d;
+      --rule: #2f2d28;
+      --src: #211f1b;
+      --dst: #1d211b;
+      --accent: #9cbb84;
+      --focus: #7a9a6b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 16px/1.5 ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+  header {
+    padding: 1.4rem 1.6rem 1.1rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  h1 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  h1 .arrow { color: var(--accent); font-weight: 400; margin: 0 0.35em; }
+  .sub {
+    margin: 0.3rem 0 0;
+    color: var(--faint);
+    font-size: 0.82rem;
+  }
+  .sub a { color: var(--accent); }
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 0;
+  }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pane:first-child { border-right: 1px solid var(--rule); }
+  .pane-label {
+    padding: 0.5rem 1rem;
+    font-size: 0.72rem;
+    color: var(--faint);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--rule);
+  }
+  .pane-label b { color: var(--ink); font-weight: 600; }
+  textarea, .out {
+    flex: 1;
+    width: 100%;
+    border: 0;
+    resize: none;
+    padding: 1rem;
+    font: inherit;
+    color: var(--ink);
+    background: var(--src);
+    tab-size: 4;
+    white-space: pre;
+    overflow: auto;
+    min-height: 40vh;
+  }
+  textarea:focus { outline: none; box-shadow: inset 3px 0 0 var(--focus); }
+  .out { background: var(--dst); margin: 0; }
+  .copy {
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--accent);
+    background: none;
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 0.15rem 0.55rem;
+    cursor: pointer;
+  }
+  .copy:hover { border-color: var(--accent); }
+  .copy:active { background: var(--dst); }
+  footer {
+    padding: 0.7rem 1.6rem;
+    border-top: 1px solid var(--rule);
+    color: var(--faint);
+    font-size: 0.75rem;
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+  }
+  footer a { color: var(--accent); }
+  @media (max-width: 640px) {
+    main { grid-template-columns: 1fr; }
+    .pane:first-child { border-right: 0; border-bottom: 1px solid var(--rule); }
+    textarea, .out { min-height: 34vh; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>md<span class="arrow">→</span>org</h1>
+    <p class="sub">Markdown in, Org mode out. Runs entirely in your browser — nothing is uploaded.</p>
+  </header>
+
+  <main>
+    <section class="pane">
+      <div class="pane-label"><span>Paste <b>Markdown</b></span></div>
+      <textarea id="in" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Markdown input"></textarea>
+    </section>
+    <section class="pane">
+      <div class="pane-label">
+        <span><b>Org mode</b> result</span>
+        <button class="copy" id="copy">Copy</button>
+      </div>
+      <pre class="out" id="out" aria-live="polite"></pre>
+    </section>
+  </main>
+
+  <footer>
+    <span id="stat">Ready</span>
+    <a href="https://github.com/USERNAME/md2org">Source &amp; iOS Shortcut</a>
+    <span>One-way, on-device.</span>
+  </footer>
+
+  <script src="md2org.js"></script>
+  <script>
+    var input = document.getElementById("in");
+    var output = document.getElementById("out");
+    var stat = document.getElementById("stat");
+    var copyBtn = document.getElementById("copy");
+
+    var sample =
+      "# Meeting notes\n\n" +
+      "Some **bold** and *italic* text, plus `inline code`.\n\n" +
+      "- first point\n- second point\n\n" +
+      "See the [spec](https://example.com) for details.\n\n" +
+      "```python\n# a comment (stays untouched)\nx = a_b_c * 2\n```\n\n" +
+      "<!-- a stray note -->\n";
+
+    function render() {
+      var src = input.value;
+      output.textContent = md2org(src);
+      stat.textContent = src.length
+        ? src.length.toLocaleString() + " chars in, " +
+          output.textContent.length.toLocaleString() + " out"
+        : "Ready";
+    }
+
+    input.addEventListener("input", render);
+
+    copyBtn.addEventListener("click", function () {
+      navigator.clipboard.writeText(output.textContent).then(function () {
+        var was = copyBtn.textContent;
+        copyBtn.textContent = "Copied";
+        setTimeout(function () { copyBtn.textContent = was; }, 1200);
+      });
+    });
+
+    // Seed with an example
+    input.value = sample;
+    render();
+  </script>
+</body>
+</html>

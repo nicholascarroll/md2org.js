@@ -1,14 +1,9 @@
 /*
- * org-validate — checks that a string is structurally valid Org.
- *
- * This is the invariant tier. It doesn't ask whether the conversion was *right*,
- * only whether the output is Org that means what it looks like. Every one of the
- * corruption bugs the rewrite fixed is caught here, so it runs over every case in
- * the suite rather than over a chosen few: a wrong conversion is a bug, but
- * invalid Org is a different and worse kind of bug, and it should be impossible to
- * introduce one without a test going red.
- *
- * Rules are from Org Syntax v2 (specs/org-syntax-v2.org).
+ * org-validate: checks that a string is structurally valid Org, following
+ * specs/org-syntax-v2.org. Block delimiters must pair and nest, source blocks
+ * need a language, lesser block bodies must be comma-quoted, and link paths may
+ * not contain an unescaped "]". Applied to every case in the suite and to fuzzed
+ * input.
  */
 
 /*
@@ -65,9 +60,6 @@ function validate(org) {
       continue;
     }
 
-    // A line of bare stars used to be impossible - the escape layer neutralised
-    // any asterisk at column 0. Under the pass-through contract it is literal
-    // text md2org copied, and Org reads it as an empty headline, which is valid.
   }
 
   for (const open of stack) {
@@ -106,27 +98,11 @@ function checkInline(org) {
       problems.push("unescaped ']' in link path: " + JSON.stringify(m[1]));
     }
   }
-  // The nested-bracket-link check has gone the same way as the link-shape check
-  // below: "][ ... [[" is now just as likely to be literal text as a badge
-  // rendered naively, and the output does not say which.
-
-  // Entities are not expanded inside verbatim or code (§Text Markup: CONTENTS is
-  // a string), so an entity there is displayed literally and is almost always a
-  // conversion bug rather than an intention.
-  const entInVerbatim = /([=~])[^=~\n]*\\[a-zA-Z]+\{\}[^=~\n]*\1/g;
   let em;
-  while ((em = entInVerbatim.exec(org)) !== null) {
-    problems.push("Org entity inside verbatim/code at offset " + em.index + ": " + JSON.stringify(em[0].slice(0, 40)));
-  }
 
-  // There was a third check here: that a bracket link md2org generated always
-  // closes. It has gone the same way as the two above. Under the pass-through
-  // contract (DESIGN.md) literal text can look like any Org markup, and nothing in
-  // the output distinguishes text md2org copied from markup md2org generated, so
-  // an unclosed "[[" can no longer be told from a "[[" that was always meant as
-  // text. The guard that replaces all three is the invariant in DESIGN.md §1:
-  // every non-markup character in the source appears in the output. See open
-  // issue 3.
+  // Nothing else is checked: literal text can resemble any Org markup, so other
+  // markup cannot be judged from the output alone. test/invariant.js checks that
+  // the author's text survives.
   return problems;
 }
 

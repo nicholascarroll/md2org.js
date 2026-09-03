@@ -1,20 +1,10 @@
 /*
- * org-render — walks a CommonMark AST and emits Org.
+ * org-render: walks a CommonMark AST and emits Org.
  *
- * Every literal string leaves through org-escape, so this file is about structure:
- * the block-context stack, indentation, and blank lines.
- *
- * Two things here are easy to get subtly wrong and are worth naming:
- *
- * 1. The column-0 guard applies to *literal text only*. Applying it to a finished
- *    line would escape the converter's own markup — a paragraph beginning with
- *    bold would have its opening "*" turned into an entity.
- *
- * 2. Blank lines follow the source, using sourcepos, rather than being emitted at
- *    every block boundary. Inventing one after each block reflows the document.
- *
- * Where a construct has no faithful Org form the choice is recorded in a comment
- * rather than made silently.
+ * Literal text is copied; the few escapes live in org-escape. This file handles
+ * structure: the block-context stack, indentation and blank lines. Blank lines
+ * follow the source, using sourcepos, rather than being emitted at every block
+ * boundary.
  */
 
 /* --8<-- core start */
@@ -24,10 +14,9 @@ function fnLabel(s) {
 }
 
 function renderOrg(ast, esc) {
-  // GitHub renders a reference as a footnote only when a matching definition
-  // exists, so the whole tree has to be seen before any reference is decided.
-  // Two distinct labels can sanitise to the same Org label ("x y" and "x-y"),
-  // which would merge two footnotes into one, so collisions get a counter.
+  // A reference converts only if a matching definition exists, so definitions
+  // are collected first. Labels that sanitise to the same Org label ("x y" and
+  // "x-y") get a counter to keep them distinct.
   var defined = {}, taken = {}, w0 = ast.walker(), e0, raw, lab, n;
   while ((e0 = w0.next())) {
     if (!e0.entering || e0.node.type !== "footnote_definition") continue;
@@ -40,15 +29,15 @@ function renderOrg(ast, esc) {
   }
   function fnRef(r) { return defined[r] !== undefined ? defined[r] : null; }
 
-  if (!renderOrg.warn) renderOrg.warn = [];
+  if (!renderOrg.warn) renderOrg.warn = {};
   var out = [];
   var line = "";
   var indent = [];
   var listStack = [];
   var linkDepth = 0;    // inside a link description
-  var nestedSkip = 0;
-  var bareDesc = 0;
-  var emptyDesc = 0;   // inside a nested image whose children are suppressed
+  var nestedSkip = 0;  // inside a nested link or image whose children are suppressed
+  var bareDesc = 0;    // inside a link emitted as its description text only
+  var emptyDesc = 0;   // inside a link with no description
   var atLineStart = true;   // nothing but indentation emitted on this line yet
   var inPara = false;       // inside a paragraph, where footnotes are recognised
   var lastEnd = 0;          // source line on which the previous block ended
@@ -56,45 +45,59 @@ function renderOrg(ast, esc) {
   var inFnDef = false;
   var quoteDepth = 0;       // inside a quote block
   var boldHeading = 0;      // current heading is being written as bold text
-  var addedEnt = "";        // entities md2org put on the current line
+  var inHeading = 0;        // inside a heading node
+  var authored = false;     // this line carries text the author wrote
+  var authoredLine = "";    // just the authored part of it
+  var declaredHeadline = false;  // md2org emitted a headline on this line, on purpose
+  var declaredComment = false;   // md2org emitted an Org comment on this line, on purpose
+  var inVerbatim = false;        // emitting the body of a block Org does not parse
+  var descStart = -1;       // index in the current line where the description begins
+  function warnAt(k) {
+    var a = renderOrg.warn[k] || (renderOrg.warn[k] = []), n = out.length + 1;
+    if (a[a.length - 1] !== n) a.push(n);
+  }
 
   function pad() { return indent.join(""); }
 
-  // An entity is the only thing md2org ever puts in the document that the author
-  // did not write, so DESIGN.md invariant 4 requires it be reported. Detected by
-  // comparing an escape's input with its output rather than by scanning the
-  // finished line: an author may write "\\vert{}" in their Markdown, and under the
-  // pass-through contract that arrives verbatim and is not ours to claim.
+  // Invariant 4. Warns when an escape changed its input, which attributes the
+  // finding to the construct that caused it rather than to the finished line.
   function ent(before, after, name) {
-    if (before !== after && addedEnt.indexOf(name) === -1)
-      addedEnt += (addedEnt ? ", " : "") + name;
+    if (before !== after) warnAt(name);
     return after;
   }
   function push(s) { if (s) { line += s; atLineStart = false; } }
 
   function endLine() {
-    // GFM task list. CommonMark does not parse these, so the box arrives as
-    // bracket text nodes and can only be seen once the line is assembled. Org
-    // recognises "[X]" and not "[x]".
+    // GFM task list. The parser does not recognise the box, so it is corrected
+    // on the assembled line. Org recognises "[X]" but not "[x]".
     if (listStack.length) line = line.replace(/^(\s*(?:-|\d+\.) )\[x\] /, "$1[X] ");
-    // A body line Org will read as a headline the Markdown never declared. Left
-    // alone - the contract leaves non-Markdown alone - but recorded, because it
-    // is the one pass-through construct that re-parents the document. Output line
-    // numbers, so they are true for the file the reader is holding.
-    if (inPara && !pad() && /^\*+\s/.test(line))
-      renderOrg.warn.push({ n: out.length + 1, t: line });
-    if (addedEnt) {
-      renderOrg.warn.push({ n: out.length + 1, t: "added " + addedEnt });
-      addedEnt = "";
-    }
+    // Warn on any line Org reads as a headline, unless md2org declared it. The
+    // test is on the output line because only the line determines what Org does:
+    // generated emphasis markup can also produce leading asterisks ("__** * **__").
+    if (!declaredHeadline && /^\*+\s/.test(line)) warnAt("heading");
+    // Warn on any line Org reads as a comment, which drops it from every export.
+    // The usual source is "\#", CommonMark's escape for a literal hash: the parser
+    // consumes the backslash and leaves a bare "#". Org requires "#" followed by
+    // whitespace or end of line, so "#1" and "#+TITLE:" do not match. Exempt:
+    // comments md2org emitted, and verbatim block bodies, where Org parses none.
+    if (!declaredComment && !inVerbatim && /^[ \t]*#(\s|$)/.test(line)) warnAt("comment");
+    // An authored block delimiter can pair with one md2org emitted. Block bodies
+    // are comma-quoted, so only authored text can reach this.
+    if (authored && /^[ \t]*#\+(BEGIN|END)_/i.test(line)) warnAt("stray block delimiter");
+    // Org reads "[[…]]" as a link. Tested against authored text only, because
+    // every link md2org emits has that form.
+    if (/\[\[[^\]]*\]\]/.test(authoredLine)) warnAt("[[ ]] read as an Org link");
+    authored = false;
+    authoredLine = "";
+    declaredHeadline = false;
+    declaredComment = false;
     out.push(line);
     line = "";
     atLineStart = true;
   }
 
-  // A block that begins its own line must not land on a line another block left
-  // open — an empty list item followed by a heading would otherwise emit "- * H",
-  // burying the heading inside the item.
+  // Close any open line before a block starts, so that a heading after an empty
+  // list item is not emitted as "- * H".
   function flush() { if (line !== "") endLine(); }
 
   function blank() {
@@ -112,61 +115,59 @@ function renderOrg(ast, esc) {
     if (node.sourcepos) lastEnd = node.sourcepos[1][0];
   }
 
-  // Literal text. Copied. The parser has already decided this is not markup, so
-  // by the contract it is not ours to touch — see DESIGN.md. Text nodes are the
-  // leaves of the tree, and re-serialising a tree copies its leaves.
+  // Literal text is copied unchanged (DESIGN.md, Invariant 1).
   function text(s) {
-    var t = inCell ? ent(s, esc.escapeCell(s), "\\vert{}") : s;
-    // Not the author's text being neutralised - the link wrapper is ours.
-    if (linkDepth > 0) t = ent(t, esc.escapeLinkDesc(t, line.slice(-1)), "\\zwnj{}");
+    var t = inCell ? ent(s, esc.escapeCell(s), "\\| in a table cell") : s;
+    // Accumulated across nodes: a backslash escape is its own text node, so
+    // "[a\\]\\]b](/u)" arrives as "a", "]", "]", "b" and no node holds "]]".
+    authored = true;
+    authoredLine += t;
     push(t);
   }
 
-  // Close a bracket link. A description ending in "]" would form "]]" against the
-  // closer and end the link one character early, so the pair is separated by a
-  // zero-width non-joiner. escapeLinkDesc cannot catch this: the collision only
-  // exists once the closer is appended.
+  // Close a bracket link. A description that contains "]]", or ends in "]" and so
+  // forms "]]" with the closer, ends the link early. Org has no escape for this,
+  // so it is reported.
   function closeLink() {
-    if (line.slice(-1) === "]") { push("\\zwnj{}"); ent(0, 1, "\\zwnj{}"); }
+    var desc = descStart >= 0 ? line.slice(descStart) : "";
+    if (desc.indexOf("]]") !== -1 || desc.slice(-1) === "]")
+      warnAt("]] in a link description");
+    descStart = -1;
     push("]]");
   }
 
+  // Emits the body of a block Org does not parse: an export, src or example
+  // block. Quote block contents are walked instead, which lets the comment check
+  // in endLine tell the two apart.
   function emitBlockLines(str) {
+    inVerbatim = true;
     str.replace(/\n$/, "").split("\n").forEach(function (l) {
       push(pad() + l);
       endLine();
     });
+    inVerbatim = false;
   }
 
-  // Markdown HTML comments are not really HTML to an Org reader; they are
-  // comments. Mapping them to Org's own comment syntax rather than to an export
-  // block is a deliberate ergonomic choice, and is pinned by the test suite.
+  // An HTML comment block becomes Org comment lines rather than an export block.
   function htmlComment(literal) {
     var raw = literal.replace(/\n$/, "");
-    if (raw.slice(0, 4) !== "<!--") return false;
-    // CommonMark ends the block at the line "-->" is on, so the rest of that line
-    // is in the literal and is visible in the Markdown. Folding it into a comment
-    // deletes it, so hand anything with trailing content to the export block,
-    // which keeps every byte.
+    // An HTML block may be indented up to three spaces; the literal keeps them.
+    var open = /^ {0,3}<!--/.exec(raw);
+    if (!open) return false;
+    // The block ends on the line containing "-->", so any text after it is part
+    // of the literal. A comment would drop that text, so it goes to an export
+    // block instead.
     var cut = raw.indexOf("-->");
     if (cut !== -1 && !/^\s*$/.test(raw.slice(cut + 3))) return false;
-    var body = cut === -1 ? raw.slice(4) : raw.slice(4, cut);
-    var lines = body.split("\n");
-    if (lines.length === 1) {
-      var one = lines[0].trim();
-      push(pad() + (one ? "# " + one : "#"));
+    var body = raw.slice(open[0].length, cut === -1 ? undefined : cut);
+    // A run of comment lines, not a comment block. Org strips "#" and one space
+    // on read, so the body survives exactly without comma-quoting, which Org does
+    // not reverse in a comment block. No body line can start another construct.
+    body.split("\n").forEach(function (l) {
+      push(pad() + (l ? "# " + l : "#"));
+      declaredComment = true;
       endLine();
-    } else {
-      push(pad() + "#+BEGIN_COMMENT"); endLine();
-      lines.forEach(function (l, i) {
-        if ((i === 0 || i === lines.length - 1) && l.trim() === "") return;
-        // A comment block is a lesser block like the others: an unquoted "*" line
-        // is still read as a headline, so hidden text becomes document structure,
-        // and "#+END_COMMENT" in the body ends the block early. Missed here.
-        push(pad() + esc.protectBlockBody(l)); endLine();
-      });
-      push(pad() + "#+END_COMMENT"); endLine();
-    }
+    });
     return true;
   }
 
@@ -182,9 +183,11 @@ function renderOrg(ast, esc) {
         break;
 
       case "softbreak":
-        // A definition is one line: Org ends it at a blank line, and a body
-        // spread over several would swallow whatever followed.
+        // Footnote definitions and headlines (§Headings) are single lines, so a
+        // soft break inside one becomes a space. Otherwise a multi-line setext
+        // heading ("foo\nbar\n===") would be truncated.
         if (inFnDef) { push(" "); break; }
+        if (inHeading) { push(" "); break; }
         endLine();
         push(pad());
         atLineStart = true;
@@ -198,29 +201,37 @@ function renderOrg(ast, esc) {
         break;
 
       case "code":
-        // A code span whose contents would break the markup wrapping it has to
-        // lose its monospace. The escape cannot go inside the delimiters: entities
-        // are not expanded within verbatim or code (§Text Markup: CONTENTS is a
-        // string), so "\vert{}" or "\zwnj{}" there would be displayed literally.
-        // Dropping the monospace and keeping the characters right is the same
-        // resolution as a span holding both "=" and "~".
-        //
-        // Two wrappers can be broken. A table cell ends at a bare "|". A link
-        // description ends at "]]" — and that one used to escape the guard
-        // entirely, because escapeLinkDesc is applied to text nodes and a code
-        // span is not a text node, so a description holding a code span with "]]"
-        // in it emitted a link that Org closed early, mid-description.
-        var lit = node.literal;
-        var breaksCell = inCell && lit.indexOf("|") !== -1;
-        var breaksLink = linkDepth > 0 && lit.indexOf("]]") !== -1;
-        if (breaksCell || breaksLink) {
-          var bare = breaksCell ? ent(lit, esc.escapeCell(lit), "\\vert{}") : lit;
-          // Inside a description the unwrapped text is now ordinary description
-          // content, so it takes the same escaping every other text node takes.
-          if (linkDepth > 0) bare = ent(bare, esc.escapeLinkDesc(bare, line.slice(-1)), "\\zwnj{}");
-          push(bare);
+        // A code span holding "|" in a table cell loses its monospace: CONTENTS
+        // is a literal string (§Text Markup), so no escape works inside the
+        // delimiters. The characters are emitted bare and warned.
+        var lit = node.literal, span, bare;
+        if (inCell && lit.indexOf("|") !== -1) {
+          span = ent(lit, esc.escapeCell(lit), "\\| in a table cell");
+          bare = true;
         } else {
-          push(esc.codeSpan(lit));
+          span = esc.codeSpan(lit);
+          // codeSpan returns the text unchanged when it holds both "=" and "~".
+          bare = span === lit;
+        }
+        authored = true;
+        // Only a span emitted without delimiters can be read as Org markup;
+        // "=[[Some Page]]=" is not a link.
+        if (bare) authoredLine += span;
+        push(span);
+        break;
+
+      case "math":
+        // LaTeX math is copied verbatim; Org reads "\(…\)" and "\[…\]" as LaTeX
+        // fragments. Line breaks follow softbreak's rules. In a table cell the
+        // text goes through escapeCell like any other.
+        var ml = node.literal.split("\n"), mi;
+        authored = true;
+        for (mi = 0; mi < ml.length; mi++) {
+          if (mi) {
+            if (inFnDef || inHeading) push(" ");
+            else { endLine(); push(pad()); }
+          }
+          push(inCell ? ent(ml[mi], esc.escapeCell(ml[mi]), "\\| in a table cell") : ml[mi]);
         }
         break;
 
@@ -230,8 +241,7 @@ function renderOrg(ast, esc) {
 
       case "footnote_definition":
         if (ev.entering) {
-          // Definitions on consecutive source lines still need separating: Org
-          // ends one at the next definition, but a reader should not have to know.
+          // Consecutive definitions are separated by a blank line for readability.
           flush();
           if (node.prev && node.prev.type === "footnote_definition") blank();
           else spaceBefore(node);
@@ -278,9 +288,7 @@ function renderOrg(ast, esc) {
         break;
 
       case "table_cell":
-        // A bare "|" would end the cell. GFM makes the author escape it, so this
-        // only fires on content that arrived as "\|" - and the table markup is
-        // ours, so repairing it is not the escaping the contract forbids.
+        // Text inside a cell goes through escapeCell (see text()).
         inCell = ev.entering;
         if (ev.entering) push(" "); else push(" |");
         break;
@@ -293,35 +301,32 @@ function renderOrg(ast, esc) {
         push("*");
         break;
 
-      // Links and images take the same path. An Org image is a link whose path is
-      // displayable, so the only difference in Markdown — that an image renders
-      // inline — is carried by the path, not by the syntax. Alt text becomes the
-      // description; a Markdown title is dropped rather than folded into the path,
-      // which is what produced broken links before.
+      // Links and images share one path: an Org image is a link to a displayable
+      // file. Alt text becomes the description; a Markdown title is dropped.
       case "link":
       case "image":
         if (ev.entering) {
           if (linkDepth > 0) {
-            // §Regular Link: a description may contain another link only as a
-            // plain or angle link, and may never contain "]]". Nesting brackets
-            // here would end the outer link early. A badge — an image inside a
-            // link — is the common case: Org writes it as a bare path in the
-            // description ([[url][img.png]]), which renders as an image, and the
-            // inner alt text has to go.
+            // A description may contain another link only as a plain or angle
+            // link (§Regular Link). A nested link or image, typically a badge,
+            // contributes its destination as the description; its own text is
+            // dropped.
             push(esc.escapeLinkPath(node.destination));
             nestedSkip++;
           } else if (node.destination && !node.firstChild) {
-            // A description must hold one or more objects, so "[[u][]]" is not a
-            // link. The path-only form says the same thing and is valid.
+            // A description must hold at least one object, so an empty one uses
+            // the path-only form.
             push("[[" + esc.escapeLinkPath(node.destination));
             emptyDesc++;
-          } else if (!node.destination) {
-            // §Regular Link: PATHREG must match one of seven patterns and empty
-            // is none of them, so "[[][t]]" is not a link at all. The
-            // description is the only content there is; emit it as text.
+          } else if (!node.destination || node.destination[0] === "#") {
+            // No link is possible, so the description is emitted as text. An
+            // empty PATHREG is not a link (§Regular Link), and a "#anchor" needs a
+            // CUSTOM_ID property that Markdown does not declare; an unresolvable
+            // link makes the whole export fail.
             bareDesc++;
           } else {
             push("[[" + esc.escapeLinkPath(node.destination) + "][");
+            if (linkDepth === 0) descStart = line.length;
           }
           linkDepth++;
         } else {
@@ -344,9 +349,8 @@ function renderOrg(ast, esc) {
         spaceBefore(node);
         if (!htmlComment(node.literal)) {
           push(pad() + "#+BEGIN_EXPORT html"); endLine();
-          // An export block is a lesser block: its contents are raw text, so a
-          // line starting with "*" or "#+" ends it early unless comma-quoted.
-          // Same hazard as a source block, and it was missed here.
+          // Export block contents are raw text, so "*" and "#+" lines are
+          // comma-quoted.
           emitBlockLines(esc.protectBlockBody(node.literal));
           push(pad() + "#+END_EXPORT"); endLine();
         }
@@ -355,8 +359,7 @@ function renderOrg(ast, esc) {
 
       case "paragraph":
         if (ev.entering) {
-          // A loose list keeps its blank lines: dropping them merged two
-          // paragraphs of an item into one, which changed what the source said.
+          // Blank lines follow the source, which keeps loose lists loose.
           if (!inFnDef) spaceBefore(node);
           // A list item or footnote definition has already written its marker
           // onto this line.
@@ -364,8 +367,8 @@ function renderOrg(ast, esc) {
           atLineStart = true;
           inPara = true;
         } else {
-          // A definition is one Org line, so its paragraphs are joined rather
-          // than separated - a blank line inside one would end it.
+          // Footnote definition paragraphs are joined, because a blank line
+          // would end the definition.
           if (inFnDef) push(" "); else endLine();
           inPara = false;
           noteEnd(node);
@@ -374,12 +377,10 @@ function renderOrg(ast, esc) {
 
       case "heading":
         if (ev.entering) {
-          // A heading is an *unindented* line and is context-free (§Headings), so
-          // it is recognised inside a quote block or a list item just as it is at
-          // top level -- it ends the enclosing section, leaves the block unclosed
-          // and pulls the rest of the document under itself. Org has no nested
-          // headline, so bold text is the closest valid reading; the level is the
-          // part that has nowhere to go.
+          inHeading++;
+          // A headline must start at column 0 (§Headings), so a heading inside a
+          // quote or list item would end the enclosing block. It is emitted as
+          // bold text instead, and its level is lost.
           boldHeading = quoteDepth || listStack.length;
           if (boldHeading) {
             if (!listStack.length) spaceBefore(node);
@@ -389,12 +390,14 @@ function renderOrg(ast, esc) {
             flush();
             spaceBefore(node);
             push("*".repeat(node.level) + " ");
+            declaredHeadline = true;
           }
         } else {
           if (boldHeading) {
             // An empty heading would leave "**": neither markup nor text.
             if (line.slice(-1) === "*") line = line.slice(0, -1); else push("*");
           }
+          inHeading--;
           endLine();
           noteEnd(node);
         }
@@ -403,9 +406,8 @@ function renderOrg(ast, esc) {
       case "code_block":
         flush();
         spaceBefore(node);
-        // Only the first word is the language. Org reads the rest of the line as
-        // switches and header arguments, so an R Markdown chunk header of the
-        // form {r setup} used to arrive as "#+BEGIN_SRC {r".
+        // Only the first word is the language; Org reads the rest of the line as
+        // switches and header arguments. "{r setup}" gives "r".
         var info = (node.info || "").trim().split(/[\s{}]+/).filter(Boolean)[0] || "";
         // Org requires a LANGUAGE on a source block (§Lesser Elements), so a bare
         // fence becomes an example block rather than an empty #+BEGIN_SRC.
@@ -430,13 +432,12 @@ function renderOrg(ast, esc) {
           spaceBefore(node);
           push(pad() + "#+BEGIN_QUOTE"); endLine();
           quoteDepth++;
-          // The quote's own opening line is now the reference point, so the first
-          // paragraph inside it doesn't read the gap before the quote as a blank.
+          // Measure the first inner paragraph's gap from the quote's opening line.
           if (node.sourcepos) lastEnd = node.sourcepos[0][0];
         } else {
           quoteDepth--;
-          // An empty list item leaves its bullet on an open line; a delimiter
-          // must never land on it, or the block never closes.
+          // An empty list item can leave its bullet on an open line; flush it so
+          // the delimiter starts a line of its own.
           flush();
           push(pad() + "#+END_QUOTE"); endLine();
           noteEnd(node);

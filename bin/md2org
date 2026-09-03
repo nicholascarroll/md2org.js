@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /*
- * md2org CLI — a Unix filter. Reads Markdown, writes Org mode.
+ * md2org CLI: a Unix filter that reads Markdown and writes Org.
  *
  *   cat notes.md | md2org > notes.org
  *   md2org notes.md > notes.org
  *   md2org < notes.md
  *
- * Calls the identical core used by the web page and the iOS Shortcut.
+ * Uses the same core as the web page and the iOS Shortcut.
  */
 "use strict";
 
@@ -22,6 +22,8 @@ const USAGE =
   "  md2org [file]        convert file (or stdin) to stdout\n" +
   "  cat f.md | md2org    read from a pipe\n\n" +
   "Options:\n" +
+  "  -e, --entities       decode HTML entities and numeric character references\n" +
+  "                       to the characters they name (&mdash; and &#8212; to —)\n" +
   "  -h, --help           show this help\n" +
   "  -v, --version        show the version\n";
 
@@ -35,10 +37,13 @@ if (args.includes("-v") || args.includes("--version")) {
   process.exit(0);
 }
 
-// An unrecognised option used to fall through to the stdin branch, where the
-// command sat waiting for input that was never coming. Silence is the worst
-// possible answer to a typo, so reject it.
-const badOpt = args.find((a) => a.startsWith("-") && a !== "-");
+// Character-reference decoding, off by default (DESIGN.md, Character references
+// and entities).
+const entities = args.includes("-e") || args.includes("--entities");
+
+// Reject unknown options rather than falling through to wait on stdin.
+const badOpt = args.find((a) => a.startsWith("-") && a !== "-" &&
+                                a !== "-e" && a !== "--entities");
 if (badOpt) {
   process.stderr.write("md2org: unknown option " + badOpt + "\n\n" + USAGE);
   process.exit(2);
@@ -52,16 +57,12 @@ if (fileArgs.length > 1) {
 }
 
 /*
- * The core returns the document with no trailing newline, which is right for the
- * browser and the Shortcut — both put the result on a clipboard or in a text box,
- * where a stray blank line is noise. A file is different: a POSIX text file ends
- * in a newline, and without one `md2org notes.md > notes.org` leaves a file whose
- * last line has no terminator, which makes `cat` run into the next prompt and
- * makes diffs report "\ No newline at end of file". So the filter adds it here,
- * where the output is going to a stream, rather than in the shared core.
+ * Terminates the output with a newline, as a POSIX text file requires. The core
+ * omits it because the browser and Shortcut place the result in a text box or on
+ * the clipboard.
  */
 function convert(input) {
-  const out = md2org(input);
+  const out = entities ? md2org.withEntities(input) : md2org(input);
   process.stdout.write(out === "" ? out : out.replace(/\n?$/, "\n"));
 }
 
@@ -77,8 +78,8 @@ if (fileArg) {
   }
   convert(input);
 } else {
-  // Reading stdin. If it is a terminal there is no pipe and no file, so the
-  // command would block on input the user did not mean to type; say so instead.
+  // Reading stdin. A terminal means no pipe was given, so report it rather than
+  // block.
   if (process.stdin.isTTY) {
     process.stderr.write("md2org: no input — give a file or pipe stdin\n\n" + USAGE);
     process.exit(2);

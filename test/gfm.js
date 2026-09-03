@@ -1,20 +1,14 @@
 /*
- * GFM extension conformance, measured against specs/gfm-spec-0.29.txt.
- *
- * Only the parse is checked here, against cell and alignment counts derived from
- * the spec's own HTML, so nothing in this tier is an authored expectation. The Org
- * rendering of tables is checked in test/spec.js.
- *
- * Footnotes are deliberately absent: the 0.29 spec contains no footnote example,
- * so there is nothing to conform to. They follow GitHub's behaviour instead and
- * are tested by example in test/spec.js.
+ * GFM table conformance against specs/gfm-spec-0.29.txt. Checks the parse only,
+ * using cell and alignment counts derived from the spec's HTML; the Org output
+ * is tested in test/spec.js. The spec has no footnote examples, so footnotes are
+ * tested in test/spec.js against GitHub's behaviour.
  */
 const fs = require("fs");
 const path = require("path");
 const { Parser } = require("../src/vendor/commonmark.js");
 
-// Tables are parsed by the forked CommonMark parser now, not by a source
-// pre-pass, so the shape is read back off the tree rather than off a struct.
+// Tables are parsed by the forked parser; their shape is read from the tree.
 const parser = new Parser();
 function tableOf(md) {
   const w = parser.parse(md).walker();
@@ -29,9 +23,7 @@ function tableOf(md) {
   return header ? { header: header, rows: rows, align: align } : null;
 }
 
-// The spec is committed, so its absence is a broken checkout rather than a
-// configuration. This used to skip and exit 0, which meant a deleted spec left the
-// suite green with zero GFM coverage. Fail loudly instead.
+// The spec is committed, so its absence fails the test rather than skipping it.
 const SPEC = path.join(__dirname, "..", "specs", "gfm-spec-0.29.txt");
 if (!fs.existsSync(SPEC)) {
   console.log("GFM SPEC missing at specs/gfm-spec-0.29.txt — it is committed, so");

@@ -1,8 +1,6 @@
-// md2org DIAGNOSTIC — paste this into the "Transform Text with JavaScript"
-// action in place of transform.js, run the Shortcut, then paste the result.
-// It is deliberately tiny and uses only old JavaScript, so it should run
-// anywhere. Nothing here converts anything; it just reports what the
-// environment supports.
+// md2org diagnostic. Paste into the "Transform Text with JavaScript" action in
+// place of transform.js, run the Shortcut, and paste the result. It converts
+// nothing; it reports what the JavaScript environment supports.
 
 var report = [];
 
@@ -22,8 +20,7 @@ try {
 }
 
 // 2. Unicode property escapes. commonmark.js uses /\p{P}/u to classify
-//    punctuation. Older JavaScriptCore rejects this at parse time, which would
-//    make the whole script fail before it runs a single line.
+//    punctuation; an engine that rejects it fails the whole script at parse time.
 try {
   var re = new RegExp("[\\p{P}\\p{S}]", "u");
   note("unicode property escapes", re.test("!") ? "OK" : "compiled but wrong");

@@ -3,30 +3,19 @@
  *
  *   node test/fuzz.js [documents] [seed]
  *
- * The idea rests on one observation: test/org-validate.js is a *total oracle*. It
- * judges any output without being told what the answer should be. So we do not
- * need authored expectations to test exhaustively — we can generate arbitrary
- * Markdown and assert a single invariant:
+ * Generates random Markdown and asserts properties that need no expected output:
+ * structurally valid Org (test/org-validate.js), Invariant 1 (test/invariant.js)
+ * and heading accounting (test/warnings.js). Every byte sequence is valid
+ * CommonMark, so any generated input is a legitimate case.
  *
- *     whatever goes in, what comes out is structurally valid Org.
- *
- * This is unusually well suited to Markdown, because there is no such thing as
- * invalid input. CommonMark has no parse errors; every byte sequence is a valid
- * document. There is no rejection path to work around, so any generated garbage is
- * a legitimate test case.
- *
- * Its first run found five real defects that 68 hand-written tests had missed,
- * including a crash on "+\n# H" that affected 2.4% of generated documents.
- *
- * The generator is fragment-based rather than byte-random: it assembles known
- * constructs in random combinations, which is what surfaces *interactions* between
- * features. Byte-random input is also valid and finds different things; that is
- * worth adding later.
- *
- * The seed is printed on failure so any run can be reproduced exactly.
+ * Documents are assembled from known fragments, nested inside one another, to
+ * exercise interactions between constructs. The seed is printed so a run can be
+ * reproduced.
  */
 const md2org = require("../src/md2org.js");
 const validate = require("./org-validate.js");
+const invariant1 = require("./invariant.js");
+const accountHeadings = require("./warnings.js");
 
 const FRAGMENTS = [
   "# H", "## H2", "###### H6", "Title\n=====", "para text", "", "   ",
@@ -42,7 +31,8 @@ const FRAGMENTS = [
   "[^1]", "[^1]: def", "[^a]: x", "[^my note!]", "`[^1]`", "[^1]: a\n    cont", "a :: b", "- x :: y", ":tag:", "# H :a:b:",
   "# TODO x", "# [#A] y", "<div>", "</div>", "<em>i</em>", "a|b",
   "|", "||", "=", "~", "+", "*", "/", "_", "\\", "[", "]", "[[", "]]",
-  "text with * star", "a**b**c", "x_y_z", "foo  ", "\t tab"
+,
+  "\\(a_b\\)", "\\(x", "\\[\nA_{ij} = 1\n\\]", "\\[1\\]", "\\(\\)"
 ];
 
 // Deterministic PRNG so a failing run can be replayed from its seed.
@@ -60,37 +50,74 @@ const seed = parseInt(process.argv[3] || String(Date.now() % 1e9), 10);
 const rnd = mulberry32(seed);
 const pick = arr => arr[Math.floor(rnd() * arr.length)];
 
+/*
+ * Wrappers place a fragment inside another construct: inline markup, links, and
+ * the block containers quote, list item and table cell.
+ */
+const WRAPPERS = [
+  s => "*" + s + "*",
+  s => "**" + s + "**",
+  s => "_" + s + "_",
+  s => "~~" + s + "~~",
+  s => "`" + s + "`",
+  s => "[" + s + "](/u)",
+  s => '[' + s + '](/u "ti")',
+  s => "![" + s + "](/i.png)",
+  s => "[" + s + "][r]",
+  s => "<" + s + ">",
+  s => "> " + s,
+  s => "- " + s,
+  s => "| " + s + " | b |\n| --- | --- |\n| 1 | 2 |"
+];
+
+/*
+ * Depth is capped at three; failures arise between a construct and its immediate
+ * container.
+ */
+function nest(depth) {
+  const base = pick(FRAGMENTS);
+  if (depth <= 0 || rnd() < 0.45) return base;
+  return pick(WRAPPERS)(nest(depth - 1));
+}
+
 function generate() {
   const parts = [];
   const n = 1 + Math.floor(rnd() * 7);
-  for (let i = 0; i < n; i++) parts.push(pick(FRAGMENTS));
+  for (let i = 0; i < n; i++) parts.push(nest(3));
   return parts.join(rnd() < 0.5 ? "\n" : "\n\n");
 }
 
 /*
- * Known-accepted failure modes: DESIGN.md open issue 1.
+ * Accepted failure modes (DESIGN.md, Known limitations). A literal "#+BEGIN_SRC"
+ * or "#+END_SRC" in the source can pair with a delimiter md2org emitted. The
+ * fragments include both, so these modes occur in most runs; the rate reflects
+ * the corpus, not real Markdown.
  *
- * A literal "#+BEGIN_SRC" or "#+END_SRC" in the source passes through under the
- * contract, where it can pair with a delimiter md2org emitted. That was accepted
- * on reachability grounds, and the corpus below carries both delimiters as
- * fragments on purpose, so these modes appear in every run at around 7%. That
- * rate is a property of the corpus, not a measure of real Markdown.
- *
- * They are reported but do not fail the run. Failing on a condition the design
- * has already decided not to fix leaves the suite with no green state, which
- * costs the only thing the fuzzer is for: noticing when something NEW breaks.
- * Anything not listed here is unexplained and fails.
- *
- * Delete an entry when the corresponding issue is closed; a mode that stops
- * occurring is reported at the end so the entry doesn't outlive the bug.
+ * They are reported but do not fail the run. Any other mode fails. At `npm run
+ * fuzz` depth, an entry that matches nothing is reported so it can be removed.
  */
 const ACCEPTED = [
-  /^line N: #\+END_SRC with no matching #\+BEGIN_$/,
-  /^line N: #\+BEGIN_SRC never closed$/,
-  /^line N: #\+END_SRC closes #\+BEGIN_\w+$/,
-  /^line N: #\+BEGIN_SRC with no LANGUAGE$/
+  /^line N: #\+END_\w+ with no matching #\+BEGIN_$/,
+  /^line N: #\+BEGIN_\w+ never closed$/,
+  /^line N: #\+END_\w+ closes #\+BEGIN_\w+$/,
+  /^line N: #\+BEGIN_\w+ with no LANGUAGE$/,
+  // The same cause, where the delimiter is inside a quote or list that md2org
+  // wrapped in a block.
+  /^line N: unquoted '#\+' at start of line inside #\+BEGIN_\w+$/
 ];
+
+/*
+ * Known open defects: real failures awaiting a fix, as distinct from ACCEPTED
+ * design decisions. Each entry is { re, closedBy }, naming the change that will
+ * close it. Reported without failing the run, and checked for staleness as
+ * ACCEPTED is.
+ */
+const KNOWN_OPEN = [
+  // None.
+];
+
 const accepted = key => ACCEPTED.some(re => re.test(key));
+const knownOpen = key => KNOWN_OPEN.find(k => k.re.test(key));
 
 let crashes = 0, invalid = 0;
 const modes = new Map();
@@ -107,10 +134,18 @@ for (let i = 0; i < N; i++) {
     if (!modes.has(key)) modes.set(key, { src, out: null });
     continue;
   }
-  const problems = validate(out);
+  // Three checks, none needing an expected answer: structural validity,
+  // Invariant 1 and Invariant 4's heading accounting.
+  const heading = accountHeadings(src);
+  const problems = validate(out)
+    .concat(invariant1(src, out))
+    .concat(heading ? ["invariant 4: " + heading] : []);
   if (problems.length) {
     invalid++;
-    const key = problems[0].replace(/offset \d+/, "offset N").replace(/line \d+/, "line N");
+    const key = problems[0]
+      .replace(/offset \d+/, "offset N")
+      .replace(/line \d+/, "line N")
+      .replace(/ on lines \[[^\]]*\][\s\S]*$/, " on lines [N]");
     seen.add(key);
     if (!modes.has(key)) modes.set(key, { src, out });
   }
@@ -120,13 +155,24 @@ console.log("FUZZ           " + N + " documents, seed " + seed);
 console.log("  crashes      " + crashes);
 console.log("  invalid Org  " + invalid + (invalid ? "  (" + (invalid / N * 100).toFixed(2) + "%)" : ""));
 
-const unexplained = [...modes].filter(([mode]) => !accepted(mode));
+const unexplained = [...modes].filter(([mode]) => !accepted(mode) && !knownOpen(mode));
 const known = [...modes].filter(([mode]) => accepted(mode));
+const open = [...modes].filter(([mode]) => !accepted(mode) && knownOpen(mode));
 
 if (known.length) {
   console.log("  accepted     " + known.length + " mode" + (known.length > 1 ? "s" : "") +
-              " — DESIGN.md issue 1, stray #+BEGIN_/#+END_ in the corpus");
+              " — stray #+BEGIN_/#+END_ in the corpus; see DESIGN.md");
   for (const [mode] of known) console.log("               " + mode);
+}
+
+if (open.length) {
+  console.log("  known open   " + open.length + " defect" + (open.length > 1 ? "s" : "") +
+              ", not decisions — see KNOWN_OPEN in test/fuzz.js");
+  for (const [mode] of open) {
+    const k = knownOpen(mode);
+    console.log("               " + mode);
+    console.log("                 closed by: " + k.closedBy);
+  }
 }
 
 if (unexplained.length) {
@@ -141,13 +187,12 @@ if (unexplained.length) {
   process.exit(1);
 }
 
-// An accepted mode that no longer occurs means the issue was fixed and the entry
-// should be deleted, so say so rather than letting it sit there forever granting
-// an exemption nothing needs. Only at `npm run fuzz` depth: the rarest of these
-// modes appears in roughly one 5,000-document run in six, so at suite depth this
-// would cry wolf.
+// An accepted mode that no longer occurs should be removed. Checked only at
+// `npm run fuzz` depth, because the rarest mode is absent from many 5,000-document
+// runs.
 if (N >= 100000) {
-  const stale = ACCEPTED.filter(re => ![...seen].some(k => re.test(k)));
+  const stale = ACCEPTED.concat(KNOWN_OPEN.map(k => k.re))
+    .filter(re => ![...seen].some(k => re.test(k)));
   if (stale.length) {
     console.log("  NOTE these ACCEPTED patterns matched nothing this run; if the");
     console.log("       underlying issue is fixed, delete them from test/fuzz.js:");

@@ -1,32 +1,18 @@
 /*
- * Optional tier: check the output against a real Org parser.
+ * Checks md2org's output with Emacs, the reference Org implementation.
  *
  *   node test/emacs.js
  *
- * NOT part of `npm test`, because it needs Emacs and most work on this project
- * happens without it. Run it on a machine that has Emacs before a release, or
- * whenever a question comes up that only the real parser can settle.
+ * Part of `npm test`; exits zero with a notice when Emacs is not installed. CI
+ * installs it. This is the only tier that tests export, which can fail on output
+ * that is structurally valid Org.
  *
- * Every other tier reasons about Org from specs/org-syntax-v2.org. That is the
- * right primary source — it is what the validator encodes and what keeps the fork
- * honest — but a specification is not an implementation, and the two have already
- * disagreed once in this project's history. The spec grants a backslash escape
- * only inside a link PATH and says nothing about one in a DESCRIPTION, from which
- * it looked like "[[/u][a\]\]b]]" could not work. Emacs parses it perfectly well.
- * It then exports it as "a\]\]b", backslashes and all, which is why md2org does
- * not use it — but that is a fact nobody could have got from reading the spec.
+ * Each case asks two questions:
  *
- * So this tier asks Org two questions that only Org can answer:
- *
- *   1. Does the output parse into the structure md2org intended? A link that
- *      closes early is still valid Org, so no static checker can see it. Org can:
- *      it reports the description it actually found.
- *   2. Does it render back to the characters the author wrote? This is where the
- *      entities earn their place. "\vert{}" and "\zwnj{}" are in the file but must
- *      not be in the export.
- *
- * Question 2 is the one worth having. It is the closest thing to a direct test of
- * DESIGN.md invariant 1 that exists anywhere in the suite.
+ *   1. Does the output parse into the intended structure? A link that closes
+ *      early is still valid Org, so only Org can report the description it found.
+ *   2. Does the export contain the characters the author wrote? This is the most
+ *      direct test of DESIGN.md Invariant 1.
  */
 "use strict";
 
@@ -44,16 +30,12 @@ function haveEmacs() {
 
 if (!haveEmacs()) {
   console.log("EMACS          not installed — skipping.");
-  console.log("               This tier is optional and is not part of `npm test`.");
-  console.log("               Run it on a machine with Emacs: node test/emacs.js");
+  console.log("               The only oracle for export. CI runs it; install");
+  console.log("               emacs to run it here: node test/emacs.js");
   process.exit(0);
 }
 
-/*
- * One Emacs process for the whole run, not one per case: startup dominates, and a
- * case-per-process turns a two-second tier into a minute of waiting, which is how
- * an optional tier stops being run at all.
- */
+/* One Emacs process for the whole run, since startup dominates. */
 function askOrg(cases) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "md2org-emacs-"));
   const inFile = path.join(tmp, "in.json");
@@ -71,23 +53,26 @@ function askOrg(cases) {
                 (json-parse-buffer :array-type 'list :object-type 'alist)))
        (results '()))
   (dolist (org cases)
-    (let (links ascii)
+    (let (links latex ascii)
       (with-temp-buffer
         (insert org)
         (org-mode)
         (setq links
               (org-element-map (org-element-parse-buffer) 'link
                 (lambda (l)
-                  ;; A vector, not a list: json-encode reads a list of strings as
-                  ;; an alist and emits an object, so ("/u" "text") comes out as
-                  ;; {"/u":["text"]} instead of ["/u","text"].
+                  ;; A vector, not a list: json-encode would emit a list of
+                  ;; strings as an object.
                   (vector (or (org-element-property :path l) "")
                           (let ((b (org-element-property :contents-begin l))
                                 (e (org-element-property :contents-end l)))
                             (if (and b e) (buffer-substring-no-properties b e) ""))))))
+        (setq latex
+              (org-element-map (org-element-parse-buffer) 'latex-fragment
+                (lambda (f) (org-element-property :value f))))
         (setq ascii (condition-case e (org-export-as 'ascii nil nil t)
                       (error (format "EXPORT-ERROR: %s" (error-message-string e))))))
-      (push (list (cons 'links (vconcat links)) (cons 'ascii ascii)) results)))
+      (push (list (cons 'links (vconcat links)) (cons 'latex (vconcat latex))
+                  (cons 'ascii ascii)) results)))
   (with-temp-file ${JSON.stringify(outFile)}
     (insert (json-encode (nreverse results)))))
 `);
@@ -103,33 +88,51 @@ function ok(name) { console.log("  ok   " + name); pass++; }
 function bad(name, detail) { console.log("  FAIL " + name + "\n         " + detail); fail++; }
 
 /*
- * Each case: Markdown in, plus what Org should find once md2org has converted it.
- *   desc  — the description text Org parses out of the link, which catches a link
- *           that closed early. A truncated description is the whole bug in
- *           DESIGN.md open issue 4.
- *   text  — a string that must appear in the ASCII export. This is where an entity
- *           has to disappear and leave the author's character behind.
+ * Each case gives Markdown and what Org should find after conversion:
+ *   desc    the description Org parses from the first link; detects a link that
+ *           closed early
+ *   text    a string the ASCII export must contain
+ *   absent  a string the ASCII export must not contain
+ *   latex   the LaTeX fragments Org parses, in order
  */
 const CASES = [
   { name: "ordinary link keeps its description",
     md: "[text](/u)", desc: "text" },
 
-  { name: "]] in a description does not close the link early",
-    md: "[a&#93;&#93;b](/u)", desc: "a]\\zwnj{}]b", text: "a]]b" },
+  /*
+   * "]]" in a description is passed through and warned. Org ends the link at the
+   * first "]]", so only the export is checked: every character must survive.
+   */
+  { name: "]] in a description keeps every character",
+    md: "[a\\]\\]b](/u)", text: "a]" },
 
-  { name: "]] from a code span does not close the link early",
-    md: "[see `a]]b` now](/u)", desc: "see a]\\zwnj{}]b now", text: "see a]]b now" },
+  { name: "]] from a code span keeps every character",
+    md: "[see `a]]b` now](/u)", text: "see" },
 
-  { name: "a description ending in ] does not close the link early",
-    // The separator goes before the closing "]]", so Org reads the description as
-    // "a]\\zwnj{}" — the author's "]" plus an invisible character, exporting to "a]".
-    md: "[a\\]](/u)", desc: "a]\\zwnj{}", text: "a]" },
+  { name: "a description ending in ] keeps every character",
+    md: "[a\\]](/u)", text: "a]" },
 
-  { name: "zwnj is invisible in the export",
-    md: "[a&#93;&#93;b](/u)", text: "a]]b" },
+  /*
+   * "\#" leaves a bare "#", which Org reads as a comment and drops from every
+   * export. Checked against Emacs because the claim is about Org's behaviour.
+   */
+  { name: "an escaped hash is dropped by Org",
+    md: "Release notes.\n\n\\# not a heading, just a hash\n\nTail line.",
+    text: "Tail line.", absent: "not a heading" },
 
-  { name: "vert is a pipe in the export",
-    md: "| a |\n| --- |\n| x \\| y |", text: "x | y" },
+  /*
+   * Checked only by the entity guard below: no Org entity may reach an export.
+   */
+  { name: "entities leave no unresolved markup",
+    md: "&amp; &apos; &divide; &mdash; &copy; &HilbertSpace; &frac12;" },
+
+  /*
+   * The parser consumes the backslash of "\|" and md2org restores it. The pipe
+   * still ends the cell, since Org has no escape for it; the backslash in the
+   * export shows that the text passed through.
+   */
+  { name: "an escaped pipe survives as the author wrote it",
+    md: "| a |\n| --- |\n| x \\| y |", text: "x \\" },
 
   { name: "a single ] needs no entity at all",
     md: "[a\\]b](/u)", desc: "a]b", text: "a]b" },
@@ -143,9 +146,8 @@ const CASES = [
   { name: "heading becomes a real headline",
     md: "# Title", text: "Title" },
 
-  // A bare relative path matches no PATHREG pattern but FUZZY, so Org searched the
-  // document for a headline called "url" and export failed. Valid Org throughout,
-  // which is why nothing else in the suite could see it.
+  // A bare relative path would be a FUZZY link, which fails on export while
+  // remaining valid Org.
   { name: "a bare relative path exports",
     md: "[foo](url)", desc: "foo", text: "foo" },
 
@@ -153,11 +155,18 @@ const CASES = [
     md: "[foo](a/b.md)", desc: "foo", text: "foo" },
 
   { name: "a parenthesised path is not read as a coderef",
-    md: "[link]((foo))", desc: "link", text: "link" }
+    md: "[link]((foo))", desc: "link", text: "link" },
+
+  // Math is copied verbatim and Org reads it as LaTeX fragments.
+  { name: "inline and display math are LaTeX fragments",
+    md: "where \\(A_{ij}\\) is\n\n\\[\n\\sum_j A_{ij} = 1\n\\]",
+    latex: ["\\(A_{ij}\\)", "\\[\n\\sum_j A_{ij} = 1\n\\]"] },
+
+  { name: "a mid-line \\[ is not math",
+    md: "see \\[1\\] here", latex: [], text: "see [1] here" }
 ];
 
-// The warnings footer is md2org's own commentary, not converted content, and it
-// would otherwise show up in every export. Strip it before asking Org.
+// The warnings footer is not converted content; strip it before export.
 function body(org) {
   const i = org.indexOf("\n\n# md2org warnings:");
   return i === -1 ? org : org.slice(0, i);
@@ -182,6 +191,14 @@ CASES.forEach((c, i) => {
       ", expected " + JSON.stringify(c.desc));
   }
 
+  if (c.latex !== undefined) {
+    if (JSON.stringify(a.latex) === JSON.stringify(c.latex)) ok(c.name + " (parse)");
+    else bad(c.name + " (parse)",
+      "org: " + JSON.stringify(org) +
+      "\n         Org read LaTeX " + JSON.stringify(a.latex) +
+      ", expected " + JSON.stringify(c.latex));
+  }
+
   if (/^EXPORT-ERROR/.test(a.ascii)) {
     bad(c.name + " (export)",
       "org: " + JSON.stringify(org) + "\n         " + a.ascii);
@@ -195,18 +212,54 @@ CASES.forEach((c, i) => {
       "\n         ASCII export " + JSON.stringify(a.ascii.trim()) +
       "\n         does not contain " + JSON.stringify(c.text));
   }
+  /* Content the export is expected to drop, for warned constructs. */
+  if (c.absent !== undefined) {
+    if (a.ascii.indexOf(c.absent) === -1) ok(c.name + " (dropped on export)");
+    else bad(c.name + " (dropped on export)",
+      "org: " + JSON.stringify(org) +
+      "\n         ASCII export " + JSON.stringify(a.ascii.trim()) +
+      "\n         still contains " + JSON.stringify(c.absent));
+  }
 });
 
-// No entity md2org generates may survive into an export: the whole justification
-// for using one is that the reader gets the character back.
+/*
+ * No Org entity may appear in an export, since md2org generates none. The
+ * pattern matches any entity rather than a list of names. Applied only to the
+ * cases above, because a real document may contain an entity the author typed in
+ * a code span.
+ */
+const ENTITY = /\\[a-zA-Z][a-zA-Z0-9]*\{\}/;
 const leaked = answers
   .map((a, i) => [CASES[i].name, a.ascii])
-  .filter(([, ascii]) => /\\(vert|zwnj)\{\}/.test(ascii));
+  .filter(([, ascii]) => ENTITY.test(ascii));
 if (leaked.length) {
   leaked.forEach(([name, ascii]) =>
     bad(name + " (entity leaked into export)", JSON.stringify(ascii.trim())));
 } else {
   ok("no generated entity survives into an export");
+}
+
+/*
+ * Document scale: the repository's own Markdown must export. An unresolvable link
+ * is valid Org but can make the exporter reject the whole document, which no
+ * static tier detects.
+ */
+const DOCS = ["README.md", "DESIGN.md", "MAPPING.md", "CHANGELOG.md"];
+const docFiles = DOCS
+  .map(r => path.join(__dirname, "..", r))
+  .filter(f => fs.existsSync(f));
+
+if (docFiles.length) {
+  const docOrgs = docFiles.map(f => md2org(fs.readFileSync(f, "utf8")));
+  const docAnswers = askOrg(docOrgs);
+
+  docFiles.forEach((f, i) => {
+    const name = path.basename(f) + " exports";
+    const ascii = docAnswers[i].ascii;
+    if (/^EXPORT-ERROR/.test(ascii)) bad(name, ascii);
+    else if (!ascii.trim()) bad(name, "exported to nothing at all");
+    else ok(name);
+  });
 }
 
 console.log("");

@@ -1,34 +1,27 @@
 /*
- * md2org — one-way Markdown to Org mode converter.
+ * md2org: one-way Markdown to Org mode converter.
  *
- * A single pure function: string in, string out. No I/O, no platform APIs, no
- * network. The CLI, the web page and the iOS Shortcut all run this same code,
- * generated into place by build.js, so they can never drift.
+ * A pure function, string in and string out, with no I/O or platform APIs. The
+ * CLI, the web page and the iOS Shortcut run this same code, copied into place by
+ * build.js.
  *
- * Design: CommonMark's own two-phase strategy (spec Appendix, "A parsing
- * strategy"). A forked CommonMark parser produces an AST; org-render walks it;
- * org-escape owns the invariant that everything emitted is valid Org. Precedence,
- * emphasis nesting and link reference definitions are handled by the parser rather
- * than by ordering regular expressions, which is what the previous single-pass
- * design could not do.
+ * Structure follows CommonMark's two-phase parsing strategy (spec Appendix):
  *
- *   src/vendor/commonmark.js   parse  (forked commonmark.js, BSD-2-Clause)
- *   src/org-escape.js          escaping layer
- *   src/org-render.js          AST -> Org
+ *   src/vendor/commonmark.js   parse   (forked commonmark.js, BSD-2-Clause)
+ *   src/org-render.js          AST to Org
+ *   src/org-escape.js          escaping
  */
 
 
 /*
- * Node/CommonJS bootstrap. build.js concatenates the modules into one scope for
- * the browser and Shortcut copies, so this block sits outside the core markers
- * and is dropped from the generated bundles.
+ * Node/CommonJS bootstrap. Outside the core markers, so build.js drops it from
+ * the generated bundles, which concatenate the modules into one scope.
  */
 if (typeof __cmark === "undefined") { var __cmark = require("./vendor/commonmark.js"); }
 if (typeof renderOrg === "undefined") { var renderOrg = require("./org-render.js"); }
 if (typeof codeSpan === "undefined") {
   var __esc = require("./org-escape.js");
   var codeSpan = __esc.codeSpan,
-      escapeLinkDesc = __esc.escapeLinkDesc,
       escapeLinkPath = __esc.escapeLinkPath,
       protectBlockBody = __esc.protectBlockBody,
       escapeCell = __esc.escapeCell;
@@ -39,24 +32,45 @@ if (typeof codeSpan === "undefined") {
 function md2org(src) {
   if (typeof src !== "string") src = String(src == null ? "" : src);
   if (src === "") return "";
-  renderOrg.warn = [];
+  renderOrg.warn = {};
 
   var parser = new __cmark.Parser({ sourcepos: true });
 
   var escapes = {
     codeSpan: codeSpan,
-    escapeLinkDesc: escapeLinkDesc,
     escapeLinkPath: escapeLinkPath,
     protectBlockBody: protectBlockBody,
     escapeCell: escapeCell
   };
 
   var out = renderOrg(parser.parse(src), escapes);
-  return renderOrg.warn.length ? out + "\n\n# md2org warnings:\n" +
-    renderOrg.warn.map(function (w) { return "# line " + w.n + ": " + w.t; }).join("\n") : out;
+  var k = Object.keys(renderOrg.warn);
+  return k.length ? out + "\n\n# md2org warnings:\n" +
+    k.map(function (x) { return "# " + x + ": line " + renderOrg.warn[x].join(", "); }).join("\n") : out;
 }
 
 /* --8<-- core end */
+
+/*
+ * Character-reference decoding, off by default (DESIGN.md, Character references
+ * and entities). Used by the CLI's -e option.
+ *
+ * Outside the core markers, so it costs the Shortcut nothing. It swaps in the
+ * parser built with upstream's entity table, which is loaded on first use. This
+ * works because the core reads __cmark at call time.
+ */
+var __cmarkEntities = null;
+
+md2org.withEntities = function (src) {
+  if (!__cmarkEntities) __cmarkEntities = require("./vendor/commonmark-entities.js");
+  var saved = __cmark;
+  __cmark = __cmarkEntities;
+  try {
+    return md2org(src);
+  } finally {
+    __cmark = saved;
+  }
+};
 
 // Universal export: CommonJS (Node/CLI), bundlers, browser global.
 if (typeof module !== "undefined" && module.exports) {

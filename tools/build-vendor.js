@@ -22,16 +22,10 @@ execSync("npm install commonmark@" + CM_VERSION + " esbuild", { cwd: tmp, stdio:
 fs.copyFileSync(path.join(here, "tools/entities-compact.js"), path.join(tmp, "entities-compact.js"));
 
 /*
- * The fork. commonmark.js is a parser, not an extension host, but it is closer
- * to one than it looks: `this.blockStarts` is read live on every parse and
- * `handleDelim` is on the InlineParser prototype. Two module-local constants are
- * what actually stand in the way, and both are opened here rather than in a
- * patch file, so the diff against upstream 0.31.2 stays visible.
- *
- * Why in the parser at all: GFM's delta is small but sits inside the block
- * parser. A source-level pre-pass runs before block structure exists, so it
- * cannot see containers — which is why tables and footnote definitions inside
- * lists and block quotes went wrong. See DESIGN.md.
+ * Applies the fork's edits to upstream. Each edit is an exact string replacement
+ * that must match, so an upstream change fails the build. GFM tables, footnotes
+ * and strikethrough live in the parser because they depend on block structure
+ * (DESIGN.md, The parser is forked).
  */
 function patch(file, edits) {
   const full = path.join(tmp, "node_modules/commonmark/lib", file);
@@ -47,19 +41,15 @@ function patch(file, edits) {
 console.log("applying md2org fork patches");
 
 patch("blocks.js", [
-  // The block-start loop is skipped entirely for lines not starting with one of
-  // these, so a table block start would never be reached. "|" is the only
-  // addition; every other character is upstream's.
-  // "|", ":" and "[" are the additions: a table delimiter row may begin with the
-  // first two and a footnote definition with the third, and this fast path skips
-  // the block-start loop entirely for anything else.
+  // Upstream skips the block-start loop for lines not beginning with one of these
+  // characters. Added: "|" and ":", which can begin a table delimiter row, and
+  // "[", which begins a footnote definition.
   ["var reMaybeSpecial = /^[#`~*+_=<>0-9-]/;",
    "var reMaybeSpecial = /^[#`~*+_=<>0-9|:[-]/;"]
 ]);
 
 patch("node.js", [
-  // Without this the walker will not descend into a strikethrough and its
-  // contents vanish from every consumer, including the renderer.
+  // The walker must descend into strikethrough nodes, or their contents are lost.
   ['        case "strong":', '        case "strong":\n        case "strikethrough":']
 ]);
 
@@ -69,14 +59,13 @@ patch("node.js", [
 ]);
 
 patch("blocks.js", [
-  // GFM tables, as a real block. cmark-gfm opens the block on the DELIMITER row
-  // and uses the paragraph above it as the header; doing the same here means the
-  // container prefixes ("> ", list indentation) are already stripped by the time
-  // we look, which is the whole reason for moving this inside the parser.
+  // GFM tables as a block. As in cmark-gfm, the block opens on the delimiter row
+  // and takes the preceding paragraph line as its header. Container prefixes
+  // ("> ", list indentation) are already stripped at that point.
   ["var reMaybeSpecial",
    "var reTableDelimRow = /^\\|?[ \\t]*:?-+:?[ \\t]*(?:\\|[ \\t]*:?-+:?[ \\t]*)*\\|?[ \\t]*$/;\n\n" +
-   "// GFM: a pipe is a cell separator unless escaped, and that distinction is\n" +
-   "// erased by the time inlines are parsed, so rows are split here.\n" +
+   "// GFM: a pipe separates cells unless escaped. The escape is lost by the time\n" +
+   "// inlines are parsed, so rows are split here.\n" +
    "var splitTableRow = function(s) {\n" +
    "    var cells = [], cur = '', i, c;\n" +
    "    s = s.trim().replace(/^\\|/, '').replace(/\\|[ \\t]*$/, '');\n" +
@@ -131,8 +120,7 @@ patch("blocks.js", [
    "    },\n" +
    "    paragraph: {"],
 
-  // Cells hold inlines, and nothing else - GFM calls a table a leaf block and
-  // says block-level elements cannot be inserted in one.
+  // A cell holds inline content only; GFM defines a table as a leaf block.
   ['if (!event.entering && (t === "paragraph" || t === "heading")) {',
    'if (!event.entering && (t === "paragraph" || t === "heading" || t === "table_cell")) {'],
 
@@ -152,8 +140,8 @@ patch("blocks.js", [
    "        var empty = keep === '';\n" +
    "        var t = parser.addChild('table', parser.nextNonspace);\n" +
    "        if (empty) { container.unlink(); }\n" +
-   "        // The delimiter row is not added here: the parser appends the current\n" +
-   "        // line itself once this returns, and doing both duplicated it.\n" +
+   "        // The delimiter row is not added here; the parser appends the current\n" +
+   "        // line after this returns.\n" +
    "        t._string_content = header + '\\n';\n" +
    "        return 2;\n" +
    "    },"]
@@ -165,11 +153,9 @@ patch("node.js", [
 ]);
 
 patch("blocks.js", [
-  // GFM footnotes. Not in the 0.29 spec at all; this follows GitHub. cmark-gfm
-  // makes them a parser option rather than an extension, because a definition
-  // races link reference definitions for the same syntax - and a block start
-  // fires before removeLinkReferenceDefinitions ever sees the paragraph, which a
-  // source pre-pass could not guarantee.
+  // GFM footnotes, following GitHub; they are not in the GFM spec. A definition
+  // is a block start so that it is recognised before link reference definitions,
+  // which share its syntax.
   ["var reTableDelimRow",
    "var reFootnoteDef = /^\\[\\^([^\\]]+)\\]:[ \\t]*/;\n\nvar reTableDelimRow"],
 
@@ -211,13 +197,8 @@ patch("blocks.js", [
 ]);
 
 patch("inlines.js", [
-  // Strikethrough is an emphasis type (GFM: "text wrapped in two tildes"), so it
-  // belongs in the delimiter machinery, not in a regex over text nodes. A regex
-  // cannot see across node boundaries, which is why "~~a *b* c~~" broke.
-  // GFM footnote reference. Recognised here so it cannot be mistaken for a link
-  // label; whether it renders as a footnote depends on a matching definition,
-  // which is not known until the whole document is parsed, so that decision is
-  // left to the renderer.
+  // Footnote references are recognised before link labels. Whether one renders
+  // as a footnote depends on a matching definition, which the renderer decides.
   ["var parseOpenBracket = function(block) {\n    var startpos = this.pos;\n    this.pos += 1;",
    "var parseOpenBracket = function(block) {\n" +
    "    var startpos = this.pos;\n" +
@@ -229,10 +210,12 @@ patch("inlines.js", [
    "        return true;\n" +
    "    }\n" +
    "    this.pos += 1;"],
+  // Strikethrough uses the emphasis delimiter machinery, so it can span other
+  // inline nodes ("~~a *b* c~~").
   ["var C_DOUBLEQUOTE = 34;",
    "var C_DOUBLEQUOTE = 34;\nvar C_TILDE = 126;"],
-  // parseString swallows any run of "ordinary" characters, and upstream counts
-  // "~" as ordinary, so the dispatch above would only ever fire at position 0.
+  // Upstream treats "~" as ordinary text, which parseString consumes in runs;
+  // excluding it lets the dispatch above see each tilde.
   ["var reMain = /^[^\\n`\\[\\]\\\\!<&*_'\"]+/m;",
    "var reMain = /^[^\\n`\\[\\]\\\\!<&*_'\"~]+/m;"],
   ["        case C_ASTERISK:\n        case C_UNDERSCORE:\n            res = this.handleDelim(c, block);",
@@ -274,6 +257,33 @@ patch("inlines.js", [
    "            } else if (closercc === C_ASTERISK || closercc === C_UNDERSCORE) {"]
 ]);
 
+patch("inlines.js", [
+  // LaTeX math, kept whole as a "math" node so no Markdown is parsed inside it.
+  // "\(...\)" is inline math anywhere it closes. "\[...\]" is display math only
+  // when "\[" begins a line and "\]" ends one, so a mid-line "\[" remains
+  // CommonMark's escape for a literal bracket. Both need at least one character
+  // and may not contain their own closing delimiter (§LaTeX Fragments), so an
+  // empty "\(\)" remains two escapes.
+  ["var reMain = ",
+   "var reMathInline = /^\\\\\\((?:(?!\\\\\\))[\\s\\S])+\\\\\\)/;\n" +
+   "var reMathDisplay = /^\\\\\\[(?:(?!\\\\\\])[\\s\\S])+\\\\\\](?=[ \\t]*(?:\\n|$))/;\n" +
+   "var reMain = "],
+  ["var parseBackslash = function(block) {\n    var subj = this.subject;\n    var node;\n",
+   "var parseBackslash = function(block) {\n" +
+   "    var subj = this.subject;\n" +
+   "    var node;\n" +
+   "    var c = subj.charAt(this.pos + 1);\n" +
+   "    var math = c === '(' ? this.match(reMathInline)\n" +
+   "        : c === '[' && (this.pos === 0 || subj.charAt(this.pos - 1) === '\\n')\n" +
+   "        ? this.match(reMathDisplay) : null;\n" +
+   "    if (math) {\n" +
+   "        node = new Node('math');\n" +
+   "        node._literal = math;\n" +
+   "        block.appendChild(node);\n" +
+   "        return true;\n" +
+   "    }\n"]
+]);
+
 // Ship bundle: parser only.
 fs.writeFileSync(path.join(tmp, "entry-parser.js"),
   'const b = require("./node_modules/commonmark/lib/blocks.js");\n' +
@@ -284,32 +294,49 @@ fs.writeFileSync(path.join(tmp, "entry-html.js"),
   'const h = require("./node_modules/commonmark/lib/render/html.js");\n' +
   'module.exports = { Parser: b.Parser || b.default || b, HtmlRenderer: h.default || h };\n');
 
-function bundle(entry, globalName, outfile) {
-  // --line-limit matters more than it looks. Without it esbuild emits the whole
-  // parser as a single ~11,000-character line, which crashes the Shortcuts editor
-  // when the generated copy is pasted in. Wrapping costs nothing in bytes.
+function bundle(entry, globalName, outfile, opts) {
+  // lineLimit stops esbuild emitting the parser as one very long line, which
+  // crashes the Shortcuts editor. The entities alias replaces upstream's 123 KB
+  // name table with tools/entities-compact.js; fullEntities keeps the table.
   execSync(
     "npx esbuild " + entry + " --bundle --minify --line-limit=80 --format=iife --global-name=" +
-    globalName + " --alias:entities=./entities-compact.js --outfile=" + outfile,
+    globalName + ((opts && opts.fullEntities) ? "" : " --alias:entities=./entities-compact.js") +
+    " --outfile=" + outfile,
     { cwd: tmp, stdio: "inherit" }
   );
   return fs.readFileSync(path.join(tmp, outfile), "utf8").trim();
 }
 
+/*
+ * Conformance figures are read from test/conformance.js, which asserts them, so
+ * the generated headers always match the tests.
+ */
+function conformanceCounts() {
+  const src = fs.readFileSync(path.join(here, "test/conformance.js"), "utf8");
+  const pass = /EXPECTED_PASS\s*=\s*(\d+)/.exec(src);
+  const full = /EXPECTED_PASS_ENTITIES\s*=\s*(\d+)/.exec(src);
+  const total = /EXPECTED_TOTAL\s*=\s*(\d+)/.exec(src);
+  if (!pass || !full || !total) {
+    throw new Error("build-vendor: cannot read the conformance figures from test/conformance.js");
+  }
+  return { pass: pass[1], full: full[1], total: total[1] };
+}
+const CONF = conformanceCounts();
+
 const shipHeader = [
   "/*",
   " * Vendored CommonMark parser (parse phase only).",
   " *",
-  " * Source:  commonmark.js " + CM_VERSION + "  —  https://github.com/commonmark/commonmark.js",
+  " * Source:  commonmark.js " + CM_VERSION + ", https://github.com/commonmark/commonmark.js",
   " * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)",
   " *",
-  " * Built from lib/blocks.js with the 99 KB html-entity table replaced by",
-  " * tools/entities-compact.js. Everything else is upstream. Exposes",
-  " * __cmark.Parser; the HTML renderer is not included, since md2org never emits",
-  " * HTML.",
+  " * Built from lib/blocks.js with md2org's fork patches (tools/build-vendor.js),",
+  " * and with upstream's entity table replaced by tools/entities-compact.js, which",
+  " * decodes nothing. Exposes __cmark.Parser; the HTML renderer is not included.",
   " *",
-  " * Conformance: 651/652 CommonMark " + CM_VERSION + " spec examples, asserted by",
-  " * test/conformance.js. The exception is example 25 — see tools/entities-compact.js.",
+  " * Conformance: " + CONF.pass + "/" + CONF.total + " CommonMark " + CM_VERSION + " spec examples,",
+  " * asserted by test/conformance.js. Every failure is a character reference that",
+  " * is not decoded.",
   " *",
   " * Regenerate: node tools/build-vendor.js",
   " */",
@@ -320,16 +347,41 @@ fs.writeFileSync(path.join(here, "src/vendor/commonmark.js"),
   shipHeader + bundle("entry-parser.js", "__cmark", "parser.js") +
   '\n\nif (typeof module !== "undefined" && module.exports) { module.exports = __cmark; }\n');
 
+/*
+ * The same parser with upstream's entity table, for the CLI's -e option and the
+ * web page's checkbox. Too large for the Shortcut. src/md2org.js loads it on
+ * first use.
+ */
+const entitiesHeader = [
+  "/*",
+  " * Vendored CommonMark parser (parse phase only), WITH upstream's entity table.",
+  " *",
+  " * Source:  commonmark.js " + CM_VERSION + ", https://github.com/commonmark/commonmark.js",
+  " * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)",
+  " *",
+  " * Identical to src/vendor/commonmark.js except that character references are",
+  " * decoded. Used only by the CLI's -e option and the web page's checkbox; never",
+  " * built into shortcut/transform.js.",
+  " *",
+  " * Conformance: " + CONF.full + "/" + CONF.total + " CommonMark " + CM_VERSION + " spec examples,",
+  " * asserted by test/conformance.js.",
+  " *",
+  " * Regenerate: node tools/build-vendor.js",
+  " */",
+  ""
+].join("\n");
+
+fs.writeFileSync(path.join(here, "src/vendor/commonmark-entities.js"),
+  entitiesHeader + bundle("entry-parser.js", "__cmarkEntities", "parser-entities.js", { fullEntities: true }) +
+  '\n\nif (typeof module !== "undefined" && module.exports) { module.exports = __cmarkEntities; }\n');
+
 const testHeader = [
   "/*",
-  " * TEST ONLY — not shipped, not bundled, not referenced by src/.",
+  " * Test only: not shipped and not referenced by src/.",
   " *",
-  " * The same forked parser as src/vendor/commonmark.js plus upstream's HTML",
-  " * renderer, so test/conformance.js can check the parser against the spec's own",
-  " * 652 markdown/HTML pairs.",
-  " *",
-  " * This pins the parser, which is third-party and already verified upstream. It",
-  " * says nothing about the Org rendering — that is test/spec.js.",
+  " * Upstream's HTML renderer, used by test/conformance.js to compare against the",
+  " * spec's 652 Markdown/HTML pairs. Conformance parses with src/vendor/commonmark.js,",
+  " * the shipped parser, not the one bundled here.",
   " *",
   " * Regenerate: node tools/build-vendor.js",
   " */",

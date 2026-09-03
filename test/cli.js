@@ -1,15 +1,6 @@
 /*
- * CLI contract for bin/md2org.
- *
- * The other tiers all test the core function. This one tests the wrapper, because
- * the wrapper had its own bugs that no amount of conversion testing could reach:
- * an unrecognised option fell through to the stdin branch and the command sat
- * there waiting for input that was never coming, and output went out with no
- * trailing newline, so `md2org notes.md > notes.org` produced a file whose last
- * line had no terminator.
- *
- * Everything here shells out for real. Requiring the module and calling a function
- * would test something other than what a user runs.
+ * Tests the CLI wrapper, bin/md2org: options, input handling, output
+ * termination and exit codes. Every case runs the real command.
  */
 const { spawnSync } = require("child_process");
 const fs = require("fs");
@@ -21,9 +12,8 @@ const VERSION = require("../package.json").version;
 
 let pass = 0, fail = 0;
 
-// Every case pipes something to stdin, even when it should be ignored: a case
-// that wrongly falls through to reading stdin would otherwise hang the suite
-// rather than fail it.
+// Every case supplies stdin, so a case that wrongly reads it fails rather than
+// hanging the suite.
 function run(args, stdin) {
   return spawnSync(process.execPath, [BIN].concat(args), {
     input: stdin === undefined ? "" : stdin,
@@ -74,8 +64,7 @@ check("'-' means stdin", () => {
   eq(r.stdout, "* H\n", "stdout");
 });
 
-// A POSIX text file ends in a newline. Without one, `cat` runs into the next
-// prompt and diffs report "\ No newline at end of file".
+// A POSIX text file ends in a newline.
 check("output ends with exactly one newline", () => {
   const r = run([doc]);
   if (!r.stdout.endsWith("\n")) throw new Error("no trailing newline");
@@ -86,6 +75,32 @@ check("empty input produces empty output, not a newline", () => {
   const r = run([], "");
   eq(r.status, 0, "exit status");
   eq(r.stdout, "", "stdout");
+});
+
+/*
+ * -e changes the conversion, so the default is asserted alongside it: decoding
+ * must stay off unless requested.
+ */
+check("references pass through by default", () => {
+  const r = run([], "A &mdash; B and &#8212;\n");
+  eq(r.status, 0, "exit status");
+  eq(r.stdout, "A &mdash; B and &#8212;\n", "stdout");
+});
+
+check("-e decodes references to their characters", () => {
+  const r = run(["-e"], "A &mdash; B and &#8212;\n");
+  eq(r.status, 0, "exit status");
+  eq(r.stdout, "A — B and —\n", "stdout");
+});
+
+check("--entities is the same as -e", () => {
+  eq(run(["--entities"], "A &mdash; B\n").stdout, run(["-e"], "A &mdash; B\n").stdout, "stdout");
+});
+
+check("-e is listed in the usage", () => {
+  if (!/-e, --entities/.test(run(["--help"]).stdout)) {
+    throw new Error("the usage does not mention -e");
+  }
 });
 
 check("--help exits 0 and writes usage to stdout", () => {
@@ -108,8 +123,7 @@ check("-v is the same as --version", () => {
   eq(run(["-v"]).stdout, VERSION + "\n", "stdout");
 });
 
-// The regression this file exists for: an unknown option used to be ignored and
-// the command blocked on stdin, so a typo produced silence.
+// An unknown option must fail rather than wait on stdin.
 check("unknown option fails instead of reading stdin", () => {
   const r = run(["--bogus"], "# H\n");
   eq(r.status, 2, "exit status");
@@ -132,8 +146,7 @@ check("unreadable file exits 1 with the reason on stderr", () => {
   if (!/cannot read/.test(r.stderr)) throw new Error("unhelpful stderr");
 });
 
-// Diagnostics belong on stderr so that `md2org bad.md > out.org` leaves out.org
-// empty rather than filled with an error message.
+// Diagnostics go to stderr, so a redirected output file receives no error text.
 check("diagnostics never land on stdout", () => {
   for (const args of [["--bogus"], [path.join(tmp, "nope.md")], [doc, doc]]) {
     eq(run(args).stdout, "", "stdout for " + JSON.stringify(args));

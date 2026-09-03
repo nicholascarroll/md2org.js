@@ -1,6 +1,6 @@
 # Specs
 
-Third-party specifications, committed unmodified. Two of them are read as data by the test suite; the third is the reference the Org validator encodes.
+Third-party specifications, committed unmodified. Referenced by tests.
 
 | File | Read by |
 |---|---|

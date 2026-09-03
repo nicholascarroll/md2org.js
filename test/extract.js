@@ -1,11 +1,8 @@
 /*
- * Mechanically extracts the CommonMark spec examples from specs/commonmark-0.31.2.txt.
+ * Extracts the CommonMark spec examples from specs/commonmark-0.31.2.txt.
  *
- * One thing here is not mechanical and will bite anyone who assumes it is: the
- * spec writes tab characters as U+2192 (→) in both halves of every example, so the
- * raw text has to be un-substituted. Skipping that makes the whole Tabs section
- * plus examples 40 and 82 fail for reasons that have nothing to do with the code
- * under test — 640/652 instead of 652/652.
+ * The spec writes tab characters as U+2192 (→) in every example, so they are
+ * converted back to tabs.
  */
 const fs = require("fs");
 const path = require("path");

@@ -1,5 +1,23 @@
 # Changelog
 
+
+## [1.1.0]  2026-09-12
+
+Note: The two previous two releases have been **unpublished** from npm.
+
+### Added
+- #8 HTML Entities translated for CLI and web as an option
+- LaTeX math passes through unchanged
+
+### Changed
+- Warnings Footer improved
+- iOS Shortcut deployment targed transform.js reduced in size by completely
+  removing all HTML entity transformation logic.
+
+### Fixed
+- Comments in code blocks were not passing through
+
+
 ## [1.0.1] — 2026-09-06
 
 ### Added
@@ -26,7 +44,7 @@ via an iOS Shortcut.
 - CI, and a CLI test tier.
 
 ### Changed
-- DESIGN.md, FEATURES.md and README.md reconciled with the code: the escaping
+- DESIGN.md, MAPPING.md and README.md reconciled with the code: the escaping
   table now lists every escape the program performs.
 - specs in test directory moved to spec
 
@@ -45,7 +63,7 @@ via an iOS Shortcut.
 ## Guidelines for updating this document
 Only user facing changes to this project are documented here. Entries are very brief summaries.
 
-For a converter, "the public API" is the mapping in [FEATURES.md](FEATURES.md) as much as it is the `md2org(string)` function. A change to what a given Markdown construct becomes in Org is a change users will notice in their files, so it is treated as breaking unless the previous output was invalid Org or plainly wrong.
+For a converter, "the public API" is the mapping in [MAPPING.md](MAPPING.md) as much as it is the `md2org(string)` function. A change to what a given Markdown construct becomes in Org is a change users will notice in their files, so it is treated as breaking unless the previous output was invalid Org or plainly wrong.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).

@@ -1,28 +1,14 @@
 /*
- * Breaks long lines in minified JavaScript, without changing what it means.
+ * Breaks long lines in minified JavaScript without changing its meaning.
  *
- * Why this exists: pasting the generated Shortcut copy into the Actions app's code
- * field crashed the Shortcuts editor. The file was the right size but the wrong
- * shape — esbuild emits the parser as a few very long lines (one was 11,446
- * characters), and a syntax-highlighting text field has to lay each line out as a
- * unit. esbuild's own --line-limit gets most of the way but won't split an array
- * of regex literals, which left one 422-character line.
+ * Long lines crash the Shortcuts editor when the Shortcut copy is pasted into
+ * the Actions code field, but so do too many lines, so wrapping narrower is not
+ * a remedy. build.js wraps at 400 columns; test/size.js holds the measurements.
  *
- * BOTH EXTREMES CRASH. Wrapping to ~80 columns fixed the long-line crash and
- * caused a different one: it put every build at 400+ lines, and a ~36,900-byte
- * file pastes at 97 lines but crashes at 369. The full measurement table is in
- * test/size.js. build.js targets 400 columns. Do not "fix" a paste crash by
- * wrapping narrower — that makes it worse.
- *
- * Splitting minified JS is only safe if you know where you are: a ";" inside a
- * string or a regex character class is not a statement separator. So this tracks
- * string, template, regex and character-class state and only breaks outside all of
- * them. Distinguishing a regex literal from division uses the standard heuristic —
- * a "/" is division only when it follows something that can end an expression.
- *
- * Correctness is not assumed. The full test suite, the 651/652 conformance check
- * and the corpus parity check in build.js all run against the wrapped output, so a
- * bad break fails loudly rather than shipping.
+ * Breaks are taken only after ";" or "," outside strings, template literals,
+ * regex literals and regex character classes. A "/" is treated as division when
+ * it follows a character that can end an expression, and as a regex otherwise.
+ * The test suite and build.js's parity check run against the wrapped output.
  */
 
 // Characters that, as the last non-space character, mean a following "/" is

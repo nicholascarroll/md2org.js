@@ -1,47 +1,26 @@
 /*
- * Where does md2org's output differ from what other tools make of the same
- * Markdown? Not a test. Nothing here passes or fails.
+ * Reports where md2org's output differs in meaning from the CommonMark spec's
+ * reference HTML. Not a test; nothing passes or fails.
  *
  *   node tools/compare.js               all 652 CommonMark examples
  *   node tools/compare.js links         only sections matching "links"
  *   node tools/compare.js -n 355        one example by number
  *   node tools/compare.js -v            show every difference, not a summary
  *
- * Needs Emacs. Uses Pandoc as well if it is installed.
+ * Requires Emacs. Uses Pandoc as a second opinion if installed.
  *
- * WHAT IT COMPARES
- *
- * For each example the CommonMark spec gives Markdown and the HTML it must
- * produce. That HTML is a statement about meaning, so its text content is a
- * reasonable stand-in for "what the document says". So:
+ * Each example's text content is compared along two paths:
  *
  *   spec Markdown ---> md2org ---> Org ---> Emacs ox-html ---> text
  *   spec Markdown ------------------------> spec's own HTML ---> text
  *
- * and the two texts should agree. Where they do not, either md2org dropped
- * something or Org read it differently than intended.
+ * A difference means md2org dropped something or Org read it differently.
+ * Neither Emacs nor Pandoc is authoritative, so tool versions are printed with
+ * every run. Where Pandoc agrees with md2org, the difference is probably inherent
+ * to Org; where it differs, md2org is the first place to look.
  *
- * NEITHER SIDE IS TRUTH
- *
- * Emacs is not an oracle. Its exporter has its own losses, its own opinions and
- * its own bugs, and it changes between versions. Pandoc is not an oracle either,
- * and it converts Markdown to Org directly, which is md2org's own job rather than
- * a check on it. The tool versions are printed at the top of every run for that
- * reason: a change in these numbers is as likely to be a change in Emacs as a
- * change in md2org.
- *
- * What the second opinion is good for is priority. Where Pandoc agrees with
- * md2org, a difference from the spec is probably inherent to Org. Where Pandoc
- * differs from md2org, md2org is worth looking at first. Where the two disagree
- * with each other the case is likely ambiguous and probably not worth the time.
- *
- * WHY THIS IS NOT IN test/
- *
- * The match count moves when Emacs moves, so asserting it would fail the build for
- * reasons that have nothing to do with this repository. Differences that ARE
- * defects get promoted by hand into test/emacs.js, where the right answer is
- * obvious and stays obvious. This file is for finding them, not for guarding them.
- * The fuzzy-link defect fixed in 1.0.1 was found here and now lives there.
+ * The match count depends on the Emacs version, so it is not asserted. Confirmed
+ * defects are added to test/emacs.js.
  */
 "use strict";
 
@@ -92,19 +71,16 @@ if (!examples.length) {
 
 const orgs = examples.map(e => body(md2org(e.markdown)));
 
-/* One Emacs process for the whole run: startup dominates everything else. */
+/* One Emacs process for the whole run, since startup dominates. */
 function orgToHtml(docs) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "md2org-cmp-"));
   const inF = path.join(tmp, "in.json"), outF = path.join(tmp, "out.json");
   fs.writeFileSync(inF, JSON.stringify(docs));
   fs.writeFileSync(path.join(tmp, "run.el"), `
 (require 'org)(require 'ox-html)(require 'json)
-;; toc and section numbers are Org furniture, not content, and would differ on
-;; every heading example. sub-superscripts is a real judgement call and is turned
-;; off here deliberately: with Org's default, "foo_bar_" exports as "foobar_"
-;; because "_bar" is read as a subscript. That is Org reinterpreting text the
-;; author wrote as plain, which is worth knowing about, but it fires on so many
-;; examples that it drowns everything else. Set it back to t to see that class.
+;; TOC and section numbers are export furniture, not content. Sub- and
+;; superscripts are off because Org reads "_bar" in "foo_bar_" as a subscript,
+;; which would dominate the results; set it to t to see that class.
 (setq org-export-with-toc nil org-export-with-section-numbers nil
       org-export-with-sub-superscripts nil)
 (let ((cases (with-temp-buffer (insert-file-contents ${JSON.stringify(inF)})
@@ -139,8 +115,7 @@ function text(html) {
     .replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
     .replace(/&(\w+);/g, (m, n) => (NAMED[n] !== undefined ? NAMED[n] : m));
 }
-// Whitespace is where the two paths differ most and mean least: Org's exporter
-// fills paragraphs, the spec's HTML does not.
+// Ignore whitespace: Org's exporter fills paragraphs and the spec's HTML does not.
 const norm = h => text(h).replace(/\s+/g, "");
 
 console.log("md2org compare");

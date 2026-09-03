@@ -111,6 +111,8 @@
     flex-wrap: wrap;
   }
   footer a { color: var(--accent); }
+  footer label { display: flex; align-items: center; gap: 0.35rem; cursor: pointer; }
+  footer input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
   @media (max-width: 640px) {
     main { grid-template-columns: 1fr; }
     .pane:first-child { border-right: 0; border-bottom: 1px solid var(--rule); }
@@ -140,6 +142,9 @@
 
   <footer>
     <span id="stat">Ready</span>
+    <label title="Convert &amp;mdash; and &amp;#8212; to the characters they name. Off by default: the iOS Shortcut cannot carry the entity table, so this is the one place the three copies differ.">
+      <input type="checkbox" id="entities"> Decode HTML entities
+    </label>
     <a id="src" hidden>Source &amp; iOS Shortcut</a>
     <span>One-way, on-device.</span>
   </footer>
@@ -152,14 +157,9 @@
     var copyBtn = document.getElementById("copy");
 
     /*
-     * The source link is derived from the page's own URL, never hardcoded: on a
-     * GitHub Pages project site the owner and the repo name are both in the
-     * hostname and the first path segment. A fork therefore links to the fork,
-     * and no copy of this file carries anyone's username.
-     *
-     * Where the URL says nothing about where the code came from — a custom
-     * domain, a local file:// open of a clone — there is nothing honest to point
-     * at, so the link stays hidden rather than guessing.
+     * The source link is derived from the page's URL: on a GitHub Pages project
+     * site, the owner is in the hostname and the repository is the first path
+     * segment, so a fork links to itself. On any other host the link stays hidden.
      */
     (function () {
       var owner = location.hostname.match(/^([\w-]+)\.github\.io$/);
@@ -170,14 +170,50 @@
       a.hidden = false;
     })();
 
+    /*
+     * Character-reference decoding, off by default (DESIGN.md, Character
+     * references and entities). Its parser is loaded on first use, and the box
+     * stays disabled until it has arrived.
+     */
+    var entitiesBox = document.getElementById("entities");
+    var entitiesReady = false;
+    var entitiesLoading = false;
+
+    function loadEntities() {
+      if (entitiesReady || entitiesLoading) return;
+      entitiesLoading = true;
+      entitiesBox.disabled = true;
+      var tag = document.createElement("script");
+      tag.src = "md2org-entities.js";
+      tag.onload = function () {
+        entitiesReady = true;
+        entitiesLoading = false;
+        entitiesBox.disabled = false;
+        render();
+      };
+      tag.onerror = function () {
+        entitiesLoading = false;
+        entitiesBox.checked = false;
+        entitiesBox.disabled = false;
+        stat.textContent = "Could not load the entity table; entities left as written.";
+      };
+      document.head.appendChild(tag);
+    }
+
     function render() {
       var src = input.value;
-      output.textContent = md2org(src);
+      var useEntities = entitiesBox.checked && entitiesReady;
+      output.textContent = useEntities ? md2orgEntities(src) : md2org(src);
       stat.textContent = src.length
         ? src.length.toLocaleString() + " chars in, " +
           output.textContent.length.toLocaleString() + " out"
         : "Ready";
     }
+
+    entitiesBox.addEventListener("change", function () {
+      if (entitiesBox.checked && !entitiesReady) loadEntities();
+      else render();
+    });
 
     input.addEventListener("input", render);
 
@@ -189,17 +225,14 @@
     }
 
     /*
-     * navigator.clipboard exists only in a secure context. Over plain http it is
-     * undefined in Chromium browsers, and the old handler called .writeText on it
-     * directly, so the button threw and did nothing at all — no error, no copy.
-     * Feature-detect, fall back to the older selection-based copy, and if both
-     * fail say so on the button rather than failing silently.
+     * navigator.clipboard exists only in a secure context, so fall back to a
+     * selection-based copy, and report on the button if both fail.
      */
     function legacyCopy(text) {
       var ta = document.createElement("textarea");
       ta.value = text;
       ta.setAttribute("readonly", "");
-      // Off-screen rather than display:none — a hidden element cannot be selected.
+      // Off-screen rather than display:none, which cannot be selected.
       ta.style.position = "fixed";
       ta.style.top = "-1000px";
       document.body.appendChild(ta);

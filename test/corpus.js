@@ -1,10 +1,6 @@
 /*
- * Inputs exercised against both src/ and the generated copies.
- *
- * build.js runs every one of these through docs/md2org.js and
- * shortcut/transform.js and compares against src/, so any difference introduced
- * by generation — comment stripping, concatenation order, the $text binding —
- * fails the build rather than reaching a user.
+ * Inputs run through src/ and the generated copies by build.js, so any
+ * difference introduced by generation fails the build. Also used by test/spec.js.
  */
 module.exports = [
   "",
@@ -14,8 +10,8 @@ module.exports = [
   "# H :tags:\n\n> q\n\n1. a\n2. b\n\n[l](/u \"t\") ![i](/p.png)",
   "```\n#+END_SRC\nstill code\n```",
   "\\*lit\\* and ***both*** and `a=b`",
-  // A code span whose contents would end the markup wrapping it. Both cases
-  // unwrap: the span loses its monospace and the characters are kept.
+  // Code spans that break the markup around them: "]]" in a link description
+  // (warned) and "|" in a table cell (monospace dropped).
   "[see `a]]b` now](/u)",
   "| `a|b` | c |\n|---|---|\n| 1 | 2 |",
   "** x **",
@@ -40,11 +36,12 @@ module.exports = [
   "[t](http://x/a]]b)",
   "> quote\n> more\n\nafter",
   "```ruby startline=3\ncode\n```\nafter",
-  // Footnotes. A definition is lifted out of the source before parsing, so this
-  // exercises a code path the AST walk never sees.
+  // Footnotes.
   "note [^1] here\n\n[^1]: the body",
   "see [^a] and [^b]\n\n[^a]: first\n[^b]: second",
   "[^1]: body\n    continued",
   "x [^my note!] and `[^2]`",
-  "[![Alt](https://img.shields.io/b.svg)](https://example.com/p)"
+  "[![Alt](https://img.shields.io/b.svg)](https://example.com/p)",
+  // LaTeX math.
+  "where \\(A_{ij}\\) is\n\n\\[\n\\sum_j A_{ij} = 1\n\\]"
 ];

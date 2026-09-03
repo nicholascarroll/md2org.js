@@ -1,38 +1,30 @@
 /*
- * Regenerates the two derived copies of the core so they can't drift by hand:
- *   docs/md2org.js        — loaded by the browser page
- *   shortcut/transform.js — core adapted to the Actions $text / return convention
+ * Regenerates the derived copies of the core from src/:
+ *   docs/md2org.js           the browser page
+ *   docs/md2org-entities.js  the browser page, with character-reference decoding
+ *   shortcut/transform.js    the iOS Shortcut, using the Actions $text/return convention
  *
- * src/ is now several modules. Each marks the part that belongs in the shipped
- * bundle with "core start" / "core end" markers; everything outside them (the
- * Node require bootstrap, the CommonJS exports) is build scaffolding and is
- * dropped. Concatenating the marked regions in dependency order gives one scope
- * with no module system, which is what both targets need.
+ * Each module in src/ marks its shipped part with "core start" and "core end"
+ * markers. The marked regions are concatenated in dependency order into one scope
+ * with no module system; everything outside them is dropped.
  *
- * Run after editing anything in src/:  node build.js
- * `npm test` asserts the copies are in sync, so a forgotten build fails the suite.
+ * Run `node build.js` after editing src/. `npm test` fails if the copies are stale.
  */
 const fs = require("fs");
 const wrapLines = require("./tools/wrap-lines.js");
 const esbuild = require("esbuild");
+const vm = require("vm");
 
 /*
- * Prefix on any message the Shortcut should treat as a failure rather than as
- * converted text. Chosen so that no real conversion can begin with it: Org output
- * never starts with a warning sign followed by the tool's own name.
+ * Prefix on a Shortcut result that reports a failure rather than converted text.
+ * No Org output can begin with it.
  */
 const ERROR_SENTINEL = "\u26A0\uFE0F md2org:";
 
 /*
- * The Shortcut copy is minified; the browser copy is not.
- *
- * The Actions app's code field is the tightest constraint in the project: 38.3 KB
- * pastes, 40 KB and 42 KB both crash the Shortcuts editor. Minifying our own
- * modules recovers about 2.6 KB, which is what makes room for the GFM layer. The
- * forked parser is already minified, so this only affects src/.
- *
- * docs/md2org.js is left readable — the browser has no size pressure, and having
- * one generated copy that a person can actually read is worth keeping.
+ * Minifies the Shortcut copy, which is limited by the Actions code field (see
+ * DESIGN.md, Constraints). The forked parser is already minified, so this affects
+ * only src/. The browser copy is left readable.
  */
 function minify(src) {
   const r = esbuild.transformSync(src, { minify: true, lineLimit: 400, loader: "js" });
@@ -40,15 +32,9 @@ function minify(src) {
 }
 
 /*
- * The derived copies are pasted into a Shortcuts text field and served to a
- * browser; nothing reads their comments, and the Shortcut copy is typed into a
- * form by hand, so bytes there are worth saving. src/ keeps the comments.
- *
- * Whole-line comments only. Anything trickier (stripping trailing comments,
- * shortening identifiers) needs a real parser, which would mean a build
- * dependency — and the saving stops mattering quickly, since two thirds of the
- * bundle is the already-minified forked parser. The full test corpus is run
- * through both generated copies below, so a stripping bug fails the build.
+ * Removes whole-line comments and blank lines from the derived copies. Trailing
+ * comments are left, since removing them safely needs a real parser. Both copies
+ * are run against the full test corpus below, so a stripping error fails the build.
  */
 function stripComments(src) {
   const out = [];
@@ -81,8 +67,8 @@ function core(path) {
   return s.slice(a + START.length, b).trim();
 }
 
-// The forked parser is a self-contained IIFE assigning to __cmark. Only its
-// CommonJS tail is build scaffolding.
+// The forked parser is a self-contained IIFE assigning to __cmark; only its
+// CommonJS tail is removed.
 function vendor(path) {
   return fs.readFileSync(path, "utf8")
     .replace(/\nif \(typeof module[\s\S]*?\}\n?$/, "")
@@ -90,11 +76,9 @@ function vendor(path) {
 }
 
 /*
- * Leading indentation is free to drop: JavaScript ignores it, and it costs about
- * 1.7 KB across the bundle. Applied only to our own modules, never to the forked
- * parser — esbuild's minified output contains template literals, and a template
- * literal that spanned lines would have its indentation baked into the string.
- * Our sources contain no backticks, which is asserted below.
+ * Removes leading indentation from our own modules, saving about 1.7 KB. Not
+ * applied to the forked parser, whose template literals could span lines. Our
+ * sources must contain no backticks, which is asserted.
  */
 function deindent(src) {
   if (src.indexOf("`") !== -1) {
@@ -116,11 +100,8 @@ const banner =
   " * Edit src/ and run `node build.js`.\n" +
   " */\n";
 
-// Long lines, not total size, are what crash the Shortcuts editor when the copy is
-// pasted into the Actions code field. esbuild's --line-limit handles most of it;
-// this catches what it leaves. One 422-character line survives — a single regex
-// literal listing the HTML block tags, which cannot be split without rewriting
-// forked code.
+// Wrap long lines, which can crash the Shortcuts editor. esbuild's lineLimit
+// handles most; wrapLines handles the rest.
 const bundle = wrapLines(stripComments(parts.join("\n\n")), 400);
 
 // 1. web copy: the bundle plus the universal export tail
@@ -132,19 +113,41 @@ fs.writeFileSync(
   "if (typeof window !== \"undefined\") {\n  window.md2org = md2org;\n}\n"
 );
 
-// 2. shortcut copy: a function body — input arrives as $text, result is returned.
+/*
+ * 1b. web copy with character-reference decoding, for the page's checkbox.
+ *
+ * Built from the same src/ over the parser that carries upstream's entity table.
+ * Wrapped in its own scope and exposing only window.md2orgEntities, so it is
+ * independent of the first bundle. The page loads it only when the option is
+ * selected. Never built into the Shortcut copy, which cannot hold the table.
+ */
+const entitiesBundle = wrapLines(stripComments([
+  vendor("src/vendor/commonmark-entities.js").replace(/\bvar __cmarkEntities=/, "var __cmark="),
+  deindent(core("src/org-escape.js")),
+  deindent(core("src/org-render.js")),
+  deindent(core("src/md2org.js"))
+].join("\n\n")), 400);
+
+fs.writeFileSync(
+  "docs/md2org-entities.js",
+  banner +
+  "// Character references decoded to the characters they name. Loaded on demand\n" +
+  "// by docs/index.html when the box is ticked; md2org proper is docs/md2org.js.\n" +
+  "(function () {\n" + entitiesBundle + "\n" +
+  "if (typeof window !== \"undefined\") { window.md2orgEntities = md2org; }\n" +
+  "if (typeof module !== \"undefined\" && module.exports) { module.exports = md2org; }\n" +
+  "})();\n"
+);
+
+// 2. shortcut copy: a function body; input arrives as $text and the result is
+// returned.
 //
-// The converter runs inside a try/catch because a throw in this action yields
-// nothing at all, and "nothing" is indistinguishable from "converted an empty
-// document". Failures are returned as text prefixed with a sentinel so the
-// Shortcut can branch on them: add an If action testing whether Transformed Text
-// "Begins With" the sentinel, show an alert on that branch, and copy to the
-// clipboard otherwise. The prefix is deliberately something no converted document
-// can start with.
+// A throw in this action yields no output, which is indistinguishable from an
+// empty conversion, so failures are returned as text beginning with
+// ERROR_SENTINEL. The Shortcut branches on that prefix to show an alert.
 fs.writeFileSync(
   "shortcut/transform.js",
-  // Setup details are in shortcut/README.md. The version stays here because a
-  // paste failure can only be diagnosed if we know which build was pasted.
+  // The version identifies which build was pasted when diagnosing a failure.
   "// transform.js, md2org " + require("./package.json").version + "\n" +
   minify(bundle) + "\n" +
   "try{var i=$text==null?\"\":String($text);" +
@@ -159,14 +162,12 @@ const md = require("./src/md2org.js");
 const shortcutFn = new Function("$text", fs.readFileSync("shortcut/transform.js", "utf8"));
 delete require.cache[require.resolve("./docs/md2org.js")];
 const webFn = require("./docs/md2org.js");
-// The same corpus test/spec.js uses, so the generated copies are exercised on
-// every construct the suite covers rather than on a handful of probes.
+// The corpus from test/spec.js, so every construct the suite covers is checked.
 const probes = require("./test/corpus.js");
 for (const s of probes) {
   if (md(s) !== webFn(s)) throw new Error("docs/md2org.js drifted");
-  // The Shortcut copy deliberately answers empty input with a hint instead of an
-  // empty string, because an empty paste on a phone gives the user nothing to go
-  // on. Every other input must match src/ exactly.
+  // Empty input returns a hint in the Shortcut copy rather than an empty
+  // string. Every other input must match src/ exactly.
   if (s === "") {
     if (shortcutFn(s).indexOf(ERROR_SENTINEL) !== 0) {
       throw new Error("shortcut/transform.js lost its empty-input guidance");
@@ -175,4 +176,18 @@ for (const s of probes) {
   }
   if (md(s) !== shortcutFn(s)) throw new Error("shortcut/transform.js drifted");
 }
-console.log("build ok — docs/md2org.js and shortcut/transform.js regenerated and verified");
+
+/*
+ * The entities copy is checked against md2org.withEntities over the same corpus.
+ */
+const entitiesFn = (() => {
+  const c = vm.createContext({ window: {}, module: { exports: {} } });
+  vm.runInContext(fs.readFileSync("docs/md2org-entities.js", "utf8"), c);
+  return vm.runInContext("window.md2orgEntities", c);
+})();
+for (const s of probes) {
+  if (md.withEntities(s) !== entitiesFn(s)) throw new Error("docs/md2org-entities.js drifted");
+}
+
+console.log("build ok — docs/md2org.js, docs/md2org-entities.js and " +
+            "shortcut/transform.js regenerated and verified");

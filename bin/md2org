@@ -16,23 +16,56 @@ const md2org = require(path.join(__dirname, "..", "src", "md2org.js"));
 
 const args = process.argv.slice(2);
 
+const USAGE =
+  "md2org — convert Markdown to Org mode\n\n" +
+  "Usage:\n" +
+  "  md2org [file]        convert file (or stdin) to stdout\n" +
+  "  cat f.md | md2org    read from a pipe\n\n" +
+  "Options:\n" +
+  "  -h, --help           show this help\n" +
+  "  -v, --version        show the version\n";
+
 if (args.includes("-h") || args.includes("--help")) {
-  process.stdout.write(
-    "md2org — convert Markdown to Org mode\n\n" +
-    "Usage:\n" +
-    "  md2org [file]        convert file (or stdin) to stdout\n" +
-    "  cat f.md | md2org    read from a pipe\n\n" +
-    "Options:\n" +
-    "  -h, --help           show this help\n"
-  );
+  process.stdout.write(USAGE);
   process.exit(0);
 }
 
-function convert(input) {
-  process.stdout.write(md2org(input));
+if (args.includes("-v") || args.includes("--version")) {
+  process.stdout.write(require("../package.json").version + "\n");
+  process.exit(0);
 }
 
-const fileArg = args.find((a) => !a.startsWith("-"));
+// An unrecognised option used to fall through to the stdin branch, where the
+// command sat waiting for input that was never coming. Silence is the worst
+// possible answer to a typo, so reject it.
+const badOpt = args.find((a) => a.startsWith("-") && a !== "-");
+if (badOpt) {
+  process.stderr.write("md2org: unknown option " + badOpt + "\n\n" + USAGE);
+  process.exit(2);
+}
+
+const fileArgs = args.filter((a) => !a.startsWith("-"));
+if (fileArgs.length > 1) {
+  process.stderr.write("md2org: expected at most one file, got " +
+                       fileArgs.length + "\n\n" + USAGE);
+  process.exit(2);
+}
+
+/*
+ * The core returns the document with no trailing newline, which is right for the
+ * browser and the Shortcut — both put the result on a clipboard or in a text box,
+ * where a stray blank line is noise. A file is different: a POSIX text file ends
+ * in a newline, and without one `md2org notes.md > notes.org` leaves a file whose
+ * last line has no terminator, which makes `cat` run into the next prompt and
+ * makes diffs report "\ No newline at end of file". So the filter adds it here,
+ * where the output is going to a stream, rather than in the shared core.
+ */
+function convert(input) {
+  const out = md2org(input);
+  process.stdout.write(out === "" ? out : out.replace(/\n?$/, "\n"));
+}
+
+const fileArg = fileArgs[0];
 
 if (fileArg) {
   let input;
@@ -44,7 +77,12 @@ if (fileArg) {
   }
   convert(input);
 } else {
-  // read stdin
+  // Reading stdin. If it is a terminal there is no pipe and no file, so the
+  // command would block on input the user did not mean to type; say so instead.
+  if (process.stdin.isTTY) {
+    process.stderr.write("md2org: no input — give a file or pipe stdin\n\n" + USAGE);
+    process.exit(2);
+  }
   const chunks = [];
   process.stdin.on("data", (c) => chunks.push(c));
   process.stdin.on("end", () => convert(Buffer.concat(chunks).toString("utf8")));

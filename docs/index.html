@@ -140,7 +140,7 @@
 
   <footer>
     <span id="stat">Ready</span>
-    <a href="https://github.com/USERNAME/md2org">Source &amp; iOS Shortcut</a>
+    <a id="src" hidden>Source &amp; iOS Shortcut</a>
     <span>One-way, on-device.</span>
   </footer>
 
@@ -151,13 +151,24 @@
     var stat = document.getElementById("stat");
     var copyBtn = document.getElementById("copy");
 
-    var sample =
-      "# Meeting notes\n\n" +
-      "Some **bold** and *italic* text, plus `inline code`.\n\n" +
-      "- first point\n- second point\n\n" +
-      "See the [spec](https://example.com) for details.\n\n" +
-      "```python\n# a comment (stays untouched)\nx = a_b_c * 2\n```\n\n" +
-      "<!-- a stray note -->\n";
+    /*
+     * The source link is derived from the page's own URL, never hardcoded: on a
+     * GitHub Pages project site the owner and the repo name are both in the
+     * hostname and the first path segment. A fork therefore links to the fork,
+     * and no copy of this file carries anyone's username.
+     *
+     * Where the URL says nothing about where the code came from — a custom
+     * domain, a local file:// open of a clone — there is nothing honest to point
+     * at, so the link stays hidden rather than guessing.
+     */
+    (function () {
+      var owner = location.hostname.match(/^([\w-]+)\.github\.io$/);
+      var repo = location.pathname.split("/")[1];
+      if (!owner || !repo) return;
+      var a = document.getElementById("src");
+      a.href = "https://github.com/" + owner[1] + "/" + repo;
+      a.hidden = false;
+    })();
 
     function render() {
       var src = input.value;
@@ -178,8 +189,6 @@
       });
     });
 
-    // Seed with an example
-    input.value = sample;
     render();
   </script>
 </body>

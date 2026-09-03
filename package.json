@@ -1,14 +1,51 @@
 {
   "name": "md2org",
   "version": "1.0.0",
-  "description": "One-way Markdown to Org mode converter.",
-  "bin": { "md2org": "bin/md2org" },
+  "description": "One-way Markdown to Org mode converter. CLI, browser and iOS Shortcut.",
+  "bin": {
+    "md2org": "bin/md2org"
+  },
   "main": "src/md2org.js",
   "scripts": {
-    "test": "node test/spec.js",
-    "build": "node build.js"
+    "test": "node test/spec.js && node test/cli.js && node test/conformance.js && node test/gfm.js && node test/fuzz.js 5000 && node test/size.js",
+    "build": "node build.js",
+    "vendor": "node tools/build-vendor.js",
+    "fuzz": "node test/fuzz.js 100000",
+    "prepublishOnly": "npm test"
   },
-  "files": ["src", "bin", "README.md", "LICENSE"],
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "license": "MIT",
-  "keywords": ["markdown", "org-mode", "org", "converter", "shortcuts", "cli"]
+  "keywords": [
+    "markdown",
+    "org",
+    "org-mode",
+    "emacs",
+    "converter",
+    "commonmark",
+    "gfm",
+    "cli",
+    "ios",
+    "shortcuts"
+  ],
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "homepage": "https://nicholascarroll.github.io/md2org.js/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nicholascarroll/md2org.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nicholascarroll/md2org.js/issues"
+  },
+  "author": "Nicholas Carroll",
+  "engines": {
+    "node": ">=18"
+  }
 }

@@ -19,3 +19,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Third-party code
+
+This package bundles a modified copy of commonmark.js in `src/vendor/`,
+Copyright (c) 2014, John MacFarlane, used under the BSD 2-Clause License.
+Its full licence text is in `src/vendor/LICENSE-commonmark`, which is
+distributed with this package.

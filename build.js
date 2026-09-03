@@ -1,36 +1,177 @@
 /*
  * Regenerates the two derived copies of the core so they can't drift by hand:
- *   docs/md2org.js       — verbatim copy, loaded by the browser page
+ *   docs/md2org.js        — loaded by the browser page
  *   shortcut/transform.js — core adapted to the Actions $text / return convention
  *
- * Run after editing src/md2org.js:  node build.js
+ * src/ is now several modules. Each marks the part that belongs in the shipped
+ * bundle with "core start" / "core end" markers; everything outside them (the
+ * Node require bootstrap, the CommonJS exports) is build scaffolding and is
+ * dropped. Concatenating the marked regions in dependency order gives one scope
+ * with no module system, which is what both targets need.
+ *
+ * Run after editing anything in src/:  node build.js
+ * `npm test` asserts the copies are in sync, so a forgotten build fails the suite.
  */
 const fs = require("fs");
+const wrapLines = require("./tools/wrap-lines.js");
+const esbuild = require("esbuild");
 
-const core = fs.readFileSync("src/md2org.js", "utf8");
+/*
+ * Prefix on any message the Shortcut should treat as a failure rather than as
+ * converted text. Chosen so that no real conversion can begin with it: Org output
+ * never starts with a warning sign followed by the tool's own name.
+ */
+const ERROR_SENTINEL = "\u26A0\uFE0F md2org:";
 
-// 1. web copy: verbatim
-fs.writeFileSync("docs/md2org.js", core);
+/*
+ * The Shortcut copy is minified; the browser copy is not.
+ *
+ * The Actions app's code field is the tightest constraint in the project: 38.3 KB
+ * pastes, 40 KB and 42 KB both crash the Shortcuts editor. Minifying our own
+ * modules recovers about 2.6 KB, which is what makes room for the GFM layer. The
+ * forked parser is already minified, so this only affects src/.
+ *
+ * docs/md2org.js is left readable — the browser has no size pressure, and having
+ * one generated copy that a person can actually read is worth keeping.
+ */
+function minify(src) {
+  const r = esbuild.transformSync(src, { minify: true, lineLimit: 400, loader: "js" });
+  return r.code;
+}
 
-// 2. shortcut copy: extract the function body, bind $text, return result
-const start = core.indexOf("function md2org(src) {");
-const bodyOpen = core.indexOf("{", start) + 1;
-let depth = 1, i = bodyOpen;
-while (depth > 0) { const c = core[i]; if (c === "{") depth++; else if (c === "}") depth--; i++; }
-let body = core.slice(bodyOpen, i - 1).replace(/\bsrc\.split\b/, "$text.split");
+/*
+ * The derived copies are pasted into a Shortcuts text field and served to a
+ * browser; nothing reads their comments, and the Shortcut copy is typed into a
+ * form by hand, so bytes there are worth saving. src/ keeps the comments.
+ *
+ * Whole-line comments only. Anything trickier (stripping trailing comments,
+ * shortening identifiers) needs a real parser, which would mean a build
+ * dependency — and the saving stops mattering quickly, since two thirds of the
+ * bundle is the already-minified forked parser. The full test corpus is run
+ * through both generated copies below, so a stripping bug fails the build.
+ */
+function stripComments(src) {
+  const out = [];
+  let inBlock = false;
+  for (const line of src.split("\n")) {
+    const t = line.trim();
+    if (inBlock) {
+      if (t.endsWith("*/")) inBlock = false;
+      continue;
+    }
+    if (t.startsWith("/*")) {
+      if (!t.endsWith("*/")) inBlock = true;
+      continue;
+    }
+    if (t.startsWith("//")) continue;
+    if (t === "") continue;
+    out.push(line);
+  }
+  return out.join("\n") + "\n";
+}
 
-const header =
-  "// md2org — for the Actions app \"Transform Text with JavaScript\" action.\n" +
-  "// Input arrives as $text; return the result. Generated from src/md2org.js.\n";
-fs.writeFileSync("shortcut/transform.js", header + body.replace(/^\n/, "").replace(/\n\s*$/, "\n"));
+const START = "/* --8<-- core start */";
+const END = "/* --8<-- core end */";
+
+function core(path) {
+  const s = fs.readFileSync(path, "utf8");
+  const a = s.indexOf(START);
+  const b = s.indexOf(END);
+  if (a === -1 || b === -1) throw new Error("missing core markers in " + path);
+  return s.slice(a + START.length, b).trim();
+}
+
+// The forked parser is a self-contained IIFE assigning to __cmark. Only its
+// CommonJS tail is build scaffolding.
+function vendor(path) {
+  return fs.readFileSync(path, "utf8")
+    .replace(/\nif \(typeof module[\s\S]*?\}\n?$/, "")
+    .trim();
+}
+
+/*
+ * Leading indentation is free to drop: JavaScript ignores it, and it costs about
+ * 1.7 KB across the bundle. Applied only to our own modules, never to the forked
+ * parser — esbuild's minified output contains template literals, and a template
+ * literal that spanned lines would have its indentation baked into the string.
+ * Our sources contain no backticks, which is asserted below.
+ */
+function deindent(src) {
+  if (src.indexOf("`") !== -1) {
+    throw new Error("deindent: source contains a template literal; not safe to strip indentation");
+  }
+  return src.split("\n").map(l => l.replace(/^[ \t]+/, "")).join("\n");
+}
+
+const parts = [
+  vendor("src/vendor/commonmark.js"),
+  deindent(core("src/org-escape.js")),
+  deindent(core("src/org-render.js")),
+  deindent(core("src/md2org.js"))
+];
+
+const banner =
+  "/*\n" +
+  " * md2org — generated by build.js from src/. Do not edit this file directly.\n" +
+  " * Edit src/ and run `node build.js`.\n" +
+  " */\n";
+
+// Long lines, not total size, are what crash the Shortcuts editor when the copy is
+// pasted into the Actions code field. esbuild's --line-limit handles most of it;
+// this catches what it leaves. One 422-character line survives — a single regex
+// literal listing the HTML block tags, which cannot be split without rewriting
+// forked code.
+const bundle = wrapLines(stripComments(parts.join("\n\n")), 400);
+
+// 1. web copy: the bundle plus the universal export tail
+fs.writeFileSync(
+  "docs/md2org.js",
+  banner + bundle +
+  "\n\nif (typeof module !== \"undefined\" && module.exports) {\n" +
+  "  module.exports = md2org;\n  module.exports.md2org = md2org;\n}\n" +
+  "if (typeof window !== \"undefined\") {\n  window.md2org = md2org;\n}\n"
+);
+
+// 2. shortcut copy: a function body — input arrives as $text, result is returned.
+//
+// The converter runs inside a try/catch because a throw in this action yields
+// nothing at all, and "nothing" is indistinguishable from "converted an empty
+// document". Failures are returned as text prefixed with a sentinel so the
+// Shortcut can branch on them: add an If action testing whether Transformed Text
+// "Begins With" the sentinel, show an alert on that branch, and copy to the
+// clipboard otherwise. The prefix is deliberately something no converted document
+// can start with.
+fs.writeFileSync(
+  "shortcut/transform.js",
+  "// md2org — Actions \"Transform Text with JavaScript\": input is $text, result is\n" +
+  "// returned. Generated from src/ by build.js. Errors are prefixed \"" + ERROR_SENTINEL + "\".\n" +
+  minify(bundle) + "\n" +
+  "try{var i=$text==null?\"\":String($text);" +
+  "if(i==\"\")return " + JSON.stringify(ERROR_SENTINEL + " no input — set the Text field to Clipboard") + ";" +
+  "var o=md2org(i);" +
+  "return o==\"\"?" + JSON.stringify(ERROR_SENTINEL + " result was empty") + ":o}" +
+  "catch(e){return " + JSON.stringify(ERROR_SENTINEL + " ") + "+(e&&e.message||e)}\n"
+);
 
 // 3. verify parity
 const md = require("./src/md2org.js");
 const shortcutFn = new Function("$text", fs.readFileSync("shortcut/transform.js", "utf8"));
+delete require.cache[require.resolve("./docs/md2org.js")];
 const webFn = require("./docs/md2org.js");
-const probes = ["## x\n**b** _i_ `c`\n- one\n<!-- n -->", "```py\n#c\nx=a_b\n```", ""];
+// The same corpus test/spec.js uses, so the generated copies are exercised on
+// every construct the suite covers rather than on a handful of probes.
+const probes = require("./test/corpus.js");
 for (const s of probes) {
-  if (md(s) !== shortcutFn(s)) throw new Error("shortcut/transform.js drifted");
   if (md(s) !== webFn(s)) throw new Error("docs/md2org.js drifted");
+  // The Shortcut copy deliberately answers empty input with a hint instead of an
+  // empty string, because an empty paste on a phone gives the user nothing to go
+  // on. Every other input must match src/ exactly.
+  if (s === "") {
+    if (shortcutFn(s).indexOf(ERROR_SENTINEL) !== 0) {
+      throw new Error("shortcut/transform.js lost its empty-input guidance");
+    }
+    continue;
+  }
+  if (md(s) !== shortcutFn(s)) throw new Error("shortcut/transform.js drifted");
 }
 console.log("build ok — docs/md2org.js and shortcut/transform.js regenerated and verified");

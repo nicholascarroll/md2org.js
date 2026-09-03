@@ -1,102 +1,64 @@
 /*
  * md2org — one-way Markdown to Org mode converter.
  *
- * A single pure function: string in, string out. No I/O, no platform APIs,
- * no dependencies. This is the one source of truth; the CLI, the web page,
- * and the iOS Shortcut all call this exact code so they can never drift.
+ * A single pure function: string in, string out. No I/O, no platform APIs, no
+ * network. The CLI, the web page and the iOS Shortcut all run this same code,
+ * generated into place by build.js, so they can never drift.
  *
- * Design: a single pass over lines with a small state machine for block
- * structure (code fences, comments), and a separate inline pass per line.
- * Nothing backtracks across the whole document, so it stays fast and never
- * hangs on pathological input.
+ * Design: CommonMark's own two-phase strategy (spec Appendix, "A parsing
+ * strategy"). A forked CommonMark parser produces an AST; org-render walks it;
+ * org-escape owns the invariant that everything emitted is valid Org. Precedence,
+ * emphasis nesting and link reference definitions are handled by the parser rather
+ * than by ordering regular expressions, which is what the previous single-pass
+ * design could not do.
+ *
+ *   src/vendor/commonmark.js   parse  (forked commonmark.js, BSD-2-Clause)
+ *   src/org-escape.js          escaping layer
+ *   src/org-render.js          AST -> Org
  */
 
-function md2org(src) {
-  const B = "\u0001"; // sentinel: protects bold markers during the italic pass
 
-  // Inline markup — operates on a single line's text, never across lines.
-  function inline(t) {
-    return t
-      // bold (**x** and __x__) parked behind a sentinel so italic can't touch it
-      .replace(/\*\*(.+?)\*\*/g, B + "$1" + B)
-      .replace(/__(.+?)__/g, B + "$1" + B)
-      // italic: a lone * or _ not touching word chars or another marker.
-      // The guards stop some_variable_name turning into /some/variable/name.
-      .replace(/(?<![\w*_])[*_](?=\S)([^*_]+?)(?<=\S)[*_](?![\w*_])/g, "/$1/")
-      .replace(new RegExp(B, "g"), "*")
-      // inline code
-      .replace(/`([^`]+)`/g, "=$1=")
-      // strikethrough
-      .replace(/~~(.+?)~~/g, "+$1+")
-      // links [text](url) -> [[url][text]]
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "[[$2][$1]]");
-  }
-
-  const out = [];
-  let inFence = false;   // inside a ``` code block
-  let inComment = false; // inside a multi-line <!-- --> comment
-
-  for (const line of src.split("\n")) {
-    // 1. CODE BLOCKS — highest priority. Contents are protected from every
-    //    other rule, so # or _ or * inside code is never reinterpreted.
-    const fence = line.match(/^```(\w*)\s*$/);
-    if (fence && !inComment) {
-      out.push(inFence ? "#+END_SRC" : "#+BEGIN_SRC " + (fence[1] || ""));
-      inFence = !inFence;
-      continue;
-    }
-    if (inFence) { out.push(line); continue; }
-
-    // 2. MARKDOWN COMMENTS — only when not inside a code block.
-    if (inComment) {
-      if (/-->/.test(line)) {
-        const before = line.replace(/-->.*$/, "").trim();
-        if (before) out.push(before);
-        out.push("#+END_COMMENT");
-        inComment = false;
-      } else {
-        out.push(line);
-      }
-      continue;
-    }
-    const single = line.match(/^\s*<!--(.*?)-->\s*$/);
-    if (single) {
-      const body = single[1].trim();
-      out.push(body ? "# " + body : "#");
-      continue;
-    }
-    if (/^\s*<!--/.test(line)) {
-      out.push("#+BEGIN_COMMENT");
-      const rest = line.replace(/^\s*<!--/, "").trim();
-      if (rest) out.push(rest);
-      inComment = true;
-      continue;
-    }
-
-    // 3. LISTS — before headings, so a "* " bullet isn't read as a heading
-    //    and a heading made here isn't demoted to a bullet. Ordered lists
-    //    (1. 2.) pass through since Org uses the same form.
-    let l = line.replace(/^([ \t]*)[*+-][ \t]+/, "$1- ");
-
-    // 4. HEADINGS — ATX "#" .. "######" to Org "*" .. "******".
-    const h = l.match(/^(#{1,6})[ \t]+(.*)$/);
-    if (h) {
-      out.push("*".repeat(h[1].length) + " " + inline(h[2]));
-      continue;
-    }
-
-    // Everything else: inline markup, keep the line.
-    out.push(inline(l));
-  }
-
-  // Close anything a malformed document left open, rather than dropping it.
-  if (inFence) out.push("#+END_SRC");
-  if (inComment) out.push("#+END_COMMENT");
-
-  return out.join("\n");
+/*
+ * Node/CommonJS bootstrap. build.js concatenates the modules into one scope for
+ * the browser and Shortcut copies, so this block sits outside the core markers
+ * and is dropped from the generated bundles.
+ */
+if (typeof __cmark === "undefined") { var __cmark = require("./vendor/commonmark.js"); }
+if (typeof renderOrg === "undefined") { var renderOrg = require("./org-render.js"); }
+if (typeof codeSpan === "undefined") {
+  var __esc = require("./org-escape.js");
+  var codeSpan = __esc.codeSpan,
+      escapeLinkDesc = __esc.escapeLinkDesc,
+      escapeLinkPath = __esc.escapeLinkPath,
+      protectBlockBody = __esc.protectBlockBody,
+      escapeCell = __esc.escapeCell;
 }
 
-// Universal export: CommonJS (Node/CLI), ES module (bundlers), browser global.
+/* --8<-- core start */
+
+function md2org(src) {
+  if (typeof src !== "string") src = String(src == null ? "" : src);
+  if (src === "") return "";
+  renderOrg.warn = [];
+
+  var parser = new __cmark.Parser({ sourcepos: true });
+
+  var escapes = {
+    codeSpan: codeSpan,
+    escapeLinkDesc: escapeLinkDesc,
+    escapeLinkPath: escapeLinkPath,
+    protectBlockBody: protectBlockBody,
+    escapeCell: escapeCell
+  };
+
+  var out = renderOrg(parser.parse(src), escapes);
+  return renderOrg.warn.length ? out + "\n\n# md2org warnings:\n" +
+    renderOrg.warn.map(function (w) { return "# line " + w.n + ": " + w.t; }).join("\n") : out;
+}
+
+/* --8<-- core end */
+
+// Universal export: CommonJS (Node/CLI), bundlers, browser global.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = md2org;
   module.exports.md2org = md2org;

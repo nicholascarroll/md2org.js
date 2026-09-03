@@ -1,0 +1,45 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm test
+
+  # The central risk in this project is the generated copies drifting from src/.
+  # test/spec.js checks them as committed; this also rebuilds and asserts the tree
+  # is unchanged, which catches a build depending on something outside src/.
+  generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+
+      - name: derived copies are current
+        run: |
+          node build.js
+          git diff --exit-code || {
+            echo "::error::run 'node build.js' and commit the result"; exit 1; }
+
+      - name: forked parser regenerates identically
+        run: |
+          node tools/build-vendor.js
+          git diff --exit-code || {
+            echo "::error::a patch in tools/build-vendor.js no longer applies"; exit 1; }

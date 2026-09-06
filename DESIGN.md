@@ -47,7 +47,7 @@ Such lines aren't altered, but they raise a warning in a comment block at the ta
 ```
 
 - **Output, not source, line numbers**
-- One line per category of warning, followed by, separated line numbers
+- One line per category of warning, followed by comma separated line numbers
 - **Absent when there are no warnings.**
 - The only place md2org puts words in the document that the author didn't write.
   Additive, never mutating.

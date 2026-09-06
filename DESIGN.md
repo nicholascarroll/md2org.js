@@ -39,16 +39,16 @@ claims everything after it until the next heading of equal or lower level.
 
 Everything else is line-local. Level-1 headings can't arise at all — a single `*` plus a space is always a Markdown bullet.
 
-Such lines aren't altered, but they're listed in a comment block at the tail:
+Such lines aren't altered, but they raise a warning in a comment block at the tail:
 
 ```org
 # md2org warnings:
-# line 4: ** Important Reminder **
+# headings: line 4
 ```
 
 - **Output, not source, line numbers**
-- **No message per warning kind** — the line speaks for itself, so new categoreis of warning cost no strings.
-- **Absent when there's nothing to say.**
+- One line per category of warning, followed by, separated line numbers
+- **Absent when there are no warnings.**
 - The only place md2org puts words in the document that the author didn't write.
   Additive, never mutating.
 

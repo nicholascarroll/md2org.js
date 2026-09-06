@@ -153,13 +153,12 @@ Org has no equivalent, so the first rule can't be kept in full.
 | Bullet character, emphasis spelling | CommonMark's tree doesn't record which was used |
 | `[Install](#install)`, a table of contents | Org anchors must be declared as `CUSTOM_ID` properties |
 
-## Out of scope by design
+## Out of scope
 
 Org to Markdown; round-tripping; math; GitHub alerts; non-GFM dialects; anything
 needing a configuration file.
 
-Tables of contents: `[Install](#install)` converts to `[[#install][Install]]`,
-which is valid Org but doesn't resolve because Org anchors must be declared as
+Tables of contents: `[Install](#install)`:  Org anchors must be declared as
 `CUSTOM_ID` properties rather than derived from heading text. So the link is stripped, leaving just plain text `Install`. 
 
 ---

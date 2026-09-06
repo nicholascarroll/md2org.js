@@ -125,7 +125,8 @@ function checkInline(org) {
   // the output distinguishes text md2org copied from markup md2org generated, so
   // an unclosed "[[" can no longer be told from a "[[" that was always meant as
   // text. The guard that replaces all three is the invariant in DESIGN.md §1:
-  // every non-markup character in the source appears in the output. See D2.
+  // every non-markup character in the source appears in the output. See
+  // DESIGN.md, "Static validation of the output is weaker than it was".
   return problems;
 }
 

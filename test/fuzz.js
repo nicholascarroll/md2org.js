@@ -68,7 +68,8 @@ function generate() {
 }
 
 /*
- * Known-accepted failure modes: DESIGN.md D1.
+ * Known-accepted failure modes: see DESIGN.md, "Block delimiters can pair
+ * with ones md2org emits".
  *
  * A literal "#+BEGIN_SRC" or "#+END_SRC" in the source passes through under the
  * contract, where it can pair with a delimiter md2org emitted. That was accepted
@@ -125,7 +126,7 @@ const known = [...modes].filter(([mode]) => accepted(mode));
 
 if (known.length) {
   console.log("  accepted     " + known.length + " mode" + (known.length > 1 ? "s" : "") +
-              " — DESIGN.md D1, stray #+BEGIN_/#+END_ in the corpus");
+              " — stray #+BEGIN_/#+END_ in the corpus; see DESIGN.md");
   for (const [mode] of known) console.log("               " + mode);
 }
 

@@ -48,9 +48,7 @@ md2org will write any warnings to the tail of the Org mode output as comments. F
 # md2org warnings:
 # heading: line 2
 ```
-This is warning you that line 2 of your output was not a heading in the source but is now.
-
-Org syntax in the source that does *not* produce a warning include: `TODO`/`DONE`, priorities e.g. `[#A]`, `:tag:`, `COMMENT`, doc properties e.g. `#+TITLE:`, `:PROPERTIES:` drawers, `DEADLINE:`, timestamps.
+This is warning you that line 2 of your output was not a heading in the source but has become a heading in the output. 
 
 If you see this: 
 
@@ -60,7 +58,7 @@ If you see this:
 ```
 It is because in the source Markdown you had `\|` in a table cell and that has been substituted for `\vert{}`, which is the Org entity that represents `|`.
 
-If the source Markdown contains a hyperlink with `]]` in the link description, md2org will replace that with `]\zwnj{}]` and show it in the Warnings Footer. The Org entity `\zwnj` is the Zero Width Non-joiner Unicode character.  The `\zwnj{}` is invisible, so `]\zwnj{}]` reads as `]]` in HTML, ASCII or LaTeX Emacs export formats.  Emacs' `org-pretty-entities` controls display of these in editor.
+If the source Markdown contains a hyperlink with `]]` in the link description, md2org will replace that with `]\zwnj{}]` and show it in the Warnings Footer. The Org entity `\zwnj{}` is the Zero Width Non-joiner Unicode character.  The `\zwnj{}` is invisible, so `]\zwnj{}]` reads as `]]` in HTML, ASCII or LaTeX Emacs export formats.  Emacs' `org-pretty-entities` controls display of these in editor.
 
 
 ## Known lossy conversions

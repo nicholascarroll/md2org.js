@@ -1,6 +1,6 @@
 {
   "name": "md2org",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "One-way Markdown to Org mode converter. CLI, browser and iOS Shortcut.",
   "bin": {
     "md2org": "bin/md2org"
@@ -11,7 +11,9 @@
     "build": "node build.js",
     "vendor": "node tools/build-vendor.js",
     "fuzz": "node test/fuzz.js 100000",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "test:emacs": "node test/emacs.js",
+    "compare": "node tools/compare.js"
   },
   "files": [
     "src",

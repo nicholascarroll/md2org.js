@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.1] — 2026-09-06
+
+### Added
+- Entities md2org adds are now reported in the warnings footer.
+
+### Changed
+- `shortcut/transform.js` header comment now shows md2org version.
+
+### Fixed
+- A bare relative link path such as `[foo](url)` or `[foo](a/b.md)` became a fuzzy Org link, which Org reads as a search for a headline of that name. Export failed This  affected 26 of the 652 CommonMark spec examples.
+- The web page's Copy button did nothing in Chromium browsers over plain http,
+  where `navigator.clipboard` is undefined. It now falls back and reports failure.
+- A code span containing `]]` inside a link description ended the link early,
+  producing invalid Org. The span now unwraps (monospace lost, characters kept).
+
 ## [1.0.0] — 2026-09-06
 
 First release. Markdown to Org conversion at the command line, in the browser, and
@@ -35,4 +50,5 @@ For a converter, "the public API" is the mapping in [FEATURES.md](FEATURES.md) a
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+[1.0.1]: https://github.com/nicholascarroll/md2org.js/releases/tag/1.0.1
 [1.0.0]: https://github.com/nicholascarroll/md2org.js/releases/tag/1.0.0

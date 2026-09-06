@@ -107,7 +107,33 @@ check("inline code", "call `foo()` now", "call =foo()= now");
 check("strikethrough", "~~gone~~", "+gone+");
 check("link", "[text](https://x.com)", "[[https://x.com][text]]");
 check("underscores inside a word are not italic", "some_var_name here", "some_var_name here");
-check("link whose text is code", "[`fn`](u)", "[[u][=fn=]]");
+// A bare relative path matches no PATHREG pattern but FUZZY, so Org reads it as a
+// search for a headline of that name and export fails outright. Markdown means a
+// relative URL, which in Org is the "file:" link type.
+check("bare relative path becomes a file: link",
+  "[foo](url)",
+  "[[file:url][foo]]");
+check("path with a directory too",
+  "[foo](a/b.md)",
+  "[[file:a/b.md][foo]]");
+check("image path likewise",
+  "![i](img.png)",
+  "[[file:img.png][i]]");
+// "(foo)" matches CODEREF, which is worse than fuzzy.
+check("parenthesised path is not a coderef",
+  "[link]((foo))",
+  "[[file:(foo)][link]]");
+// Already unambiguous, so left alone.
+check("./ and ../ and / are already file paths",
+  "[a](./x) [b](../y) [c](/z)",
+  "[[./x][a]] [[../y][b]] [[/z][c]]");
+check("a link type is left alone",
+  "[a](http://x/y) [b](mailto:p@q.r)",
+  "[[http://x/y][a]] [[mailto:p@q.r][b]]");
+check("#anchor is a custom-id, not a file",
+  "[a](#sec)",
+  "[[#sec][a]]");
+check("link whose text is code", "[`fn`](u)", "[[file:u][=fn=]]");
 
 console.log("LISTS");
 check("dash bullet", "- item", "- item");
@@ -254,19 +280,39 @@ check("image inside link text alongside words",
 // bracket fell outside the link — valid Org, so org-validate.js did not catch it.
 check("description ending in ] does not close the link early",
   "[a\\]](/u)",
-  "[[/u][a]\\zwnj{}]]");
+  "[[/u][a]\\zwnj{}]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
 check("]] split across text nodes is guarded",
   "[a\\]\\]b](/u)",
-  "[[/u][a]\\zwnj{}]b]]");
+  "[[/u][a]\\zwnj{}]b]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+// A code span is not a text node, so escapeLinkDesc never saw it and "]]" inside
+// one closed the link mid-description. The span unwraps: monospace lost,
+// characters kept, same resolution as a pipe inside code in a table cell.
+check("]] inside a code span in a description unwraps the span",
+  "[see `a]]b` now](/u)",
+  "[[/u][see a]\\zwnj{}]b now]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+check("]] inside a code span in an image description unwraps too",
+  "![alt `]]` t](/i.png)",
+  "[[/i.png][alt ]\\zwnj{}] t]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+// Only "]]" breaks a description, so a lone "]" keeps its monospace. Unwrapping
+// more than necessary would lose formatting the author asked for.
+check("a single ] in a code span keeps its monospace",
+  "[a`x]`](/u)",
+  "[[/u][a=x]=]]");
+check("]] in a code span outside a link keeps its monospace",
+  "`]]` here",
+  "=]]= here");
+check("]] in a code span in a table cell keeps its monospace",
+  "| `a]]b` | c |\n|---|---|\n| 1 | 2 |",
+  "| =a]]b= | c |\n|----+----|\n| 1 | 2 |");
 check("a single ] in a description is left alone",
   "[a\\]b](/u)",
   "[[/u][a]b]]");
 check("image alt ending in ] is guarded",
   "![alt\\]](/i.png)",
-  "[[/i.png][alt]\\zwnj{}]]");
+  "[[/i.png][alt]\\zwnj{}]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
 check("autolink ending in ] is guarded",
   "<http://x/ab]>",
-  "[[http://x/ab%5D][http://x/ab]\\zwnj{}]]");
+  "[[http://x/ab%5D][http://x/ab]\\zwnj{}]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
 
 check("table rule row is an Org rule, not a data row",
   "| a | b |\n| --- | --- |\n| 1 | 2 |",
@@ -276,13 +322,13 @@ check("table alignment becomes a cookie row",
   "| a | b |\n|----+----|\n| <c> | <r> |\n| 1 | 2 |");
 check("escaped pipe in a plain cell becomes an entity",
   "| a |\n| --- |\n| x \\| y |",
-  "| a |\n|----|\n| x \\vert{} y |");
+  "| a |\n|----|\n| x \\vert{} y |\n\n# md2org warnings:\n# line 3: added \\vert{}");
 // Entities are not expanded inside verbatim (§Text Markup: CONTENTS is a string),
 // so a pipe inside code in a cell cannot be escaped in place. The span is
 // unwrapped: the text stays correct, only the monospace is lost.
 check("pipe inside code in a cell unwraps the code span",
   "| a |\n| --- |\n| \`Alt-\\|\` |",
-  "| a |\n|----|\n| Alt-\\vert{} |");
+  "| a |\n|----|\n| Alt-\\vert{} |\n\n# md2org warnings:\n# line 3: added \\vert{}");
 check("code span without a pipe keeps its markup",
   "| a |\n| --- |\n| \`fmt\` |",
   "| a |\n|----|\n| =fmt= |");

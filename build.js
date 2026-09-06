@@ -143,8 +143,9 @@ fs.writeFileSync(
 // can start with.
 fs.writeFileSync(
   "shortcut/transform.js",
-  "// md2org — Actions \"Transform Text with JavaScript\": input is $text, result is\n" +
-  "// returned. Generated from src/ by build.js. Errors are prefixed \"" + ERROR_SENTINEL + "\".\n" +
+  // Setup details are in shortcut/README.md. The version stays here because a
+  // paste failure can only be diagnosed if we know which build was pasted.
+  "// transform.js, md2org " + require("./package.json").version + "\n" +
   minify(bundle) + "\n" +
   "try{var i=$text==null?\"\":String($text);" +
   "if(i==\"\")return " + JSON.stringify(ERROR_SENTINEL + " no input — set the Text field to Clipboard") + ";" +

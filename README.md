@@ -16,21 +16,10 @@ Source text that isn't Markdown markup passes through unchanged. The conversion 
 
 A Unix filter. Needs [Node.js](https://nodejs.org).
 
-Install from npm:
-
 ```sh
 npm install -g md2org
 ```
-
-Or from a clone:
-
-```sh
-git clone https://github.com/nicholascarroll/md2org.js
-cd md2org.js
-npm link          # or add bin/ to your PATH
-```
-
-Either way:
+Usage: 
 
 ```sh
 md2org notes.md > notes.org
@@ -40,8 +29,6 @@ md2org --help
 md2org --version
 ```
 
-Reads a file argument or stdin, writes Org to stdout. Diagnostics go to stderr, so
-a failure leaves your redirect target empty rather than full of an error message.
 Exit status is 0 on success, 1 if the input file can't be read, 2 for a usage
 error.
 
@@ -65,6 +52,16 @@ This is warning you that line 2 of your output was not a heading in the source b
 
 Org syntax in the source that does *not* produce a warning include: `TODO`/`DONE`, priorities e.g. `[#A]`, `:tag:`, `COMMENT`, doc properties e.g. `#+TITLE:`, `:PROPERTIES:` drawers, `DEADLINE:`, timestamps.
 
+If you see this: 
+
+```
+# md2org warnings:
+# line 3: added \vert{}
+```
+It is because in the source Markdown you had a `|` in a table cell. Org's solution for that is to use the the Org entity `\vert{}` to represent the `|`. 
+
+If the source Markdown contains a hyperlink with `]]` in the link description, md2org will replace that with `]\zwnj{}]` and show it in the Warnings Footer. The Org entity `\zwnj` is the Zero Width Non-joiner Unicode character.  The `\zwnj{}` is invisible, so `]\zwnj{}]` reads as `]]` in HTML, ASCII or LaTeX Emacs export formats.  Emacs' `org-pretty-entities` controls display of these in editor.
+
 
 ## Known lossy conversions
 
@@ -77,7 +74,7 @@ Org syntax in the source that does *not* produce a warning include: `TODO`/`DONE
 
 ## Correctness
 
-md2org.js forks and modifies the reference [CommonMark](https://spec.commonmark.org/0.31.2/) parser, and passes 651 of the specification's 652 test cases. Forking is safe because `test/conformance.js` runs the spec's own 652 examples as data.
+md2org.js forks and modifies the reference [CommonMark](https://spec.commonmark.org/0.31.2/) parser, and passes 651 of the specification's 652 test cases. 
 
 Tables and footnotes are [GitHub Flavoured Markdown](specs/gfm-spec-0.29.txt) extensions that CommonMark doesn't define.
 
@@ -105,24 +102,27 @@ npm test
 - **`test/spec.js`** — the behavioural contract. Every mapping in
   [FEATURES.md](FEATURES.md) has a case here. Also checks that every output is
   valid Org, and that the browser and Shortcut copies convert identically to
-  `src/`, which is what the README promises about the three interfaces.
-- **`test/cli.js`** — the CLI contract, shelling out to `bin/md2org` for real:
-  argument handling, exit statuses, and which stream each kind of output goes to.
+  `src/`.
+- **`test/cli.js`** — the CLI contract, tests `bin/md2org` in the shell.
 - **`test/conformance.js`** — CommonMark conformance, 651/652, measured against
   the spec's own Markdown/HTML pairs run as data.
 - **`test/gfm.js`** — GFM table conformance, 8/8, against the GFM spec's examples.
 - **`test/fuzz.js`** — generates 5,000 documents from a fragment corpus and
-  asserts that every output is structurally valid Org. `npm run fuzz` runs 100,000.
-- **`test/size.js`** — asserts `shortcut/transform.js` still fits the shape known
-  to paste into the Actions app. See [FEATURES.md](FEATURES.md#bytes-budget).
+  asserts that every output is structurally valid Org. `npm run fuzz` runs 
+  100,000.
+- **`test/size.js`** — asserts `shortcut/transform.js` still fits into the
+  Actions app. See [FEATURES.md](FEATURES.md#bytes-budget).
 
-The specifications the first three measure against are in
-[`specs/`](specs/README.md), committed unmodified.
+Optional (**not** run by `npm test`):
 
-`npm test` needs no build tools — only `node build.js` does, and only when you
-change `src/`. So the suite runs anywhere Node does, including on a tablet where
-esbuild has no binary. CI covers the other half, rebuilding the derived copies and
-the forked parser and failing on any byte difference.
+```sh
+npm run test:emacs
+```
+
+If Emacs is installed, `test/emacs.js` feeds the output to a real Org parser and checks that Org finds the structure md2org intended.
+
+The specifications the first three measure against are in [`specs/`](specs/README.md), committed unmodified.
+
 
 ## Building
 
@@ -138,13 +138,7 @@ The CommonMark parser in `src/vendor/` is generated and committed. You only need
 
 ### Size limit on the iOS Shortcut
 
-The iOS Shortcut is the tightest constraint in the project. Pasting
-`shortcut/transform.js` into the Actions app's JavaScript code field crashes the
-Shortcuts editor if the file's byte count, line count or line length is too great
-— and wrapping narrower makes it worse, not better, because many short lines crash
-where a few long ones don't. That's why the Shortcut copy is minified while the
-browser copy is not, and why new features are costed in bytes in
-[FEATURES.md](FEATURES.md#bytes-budget). `npm test` asserts all three dimensions.
+The iOS Shortcut is extremely tightly constrained by a size limit for the md2org core code `shortcut/transform.js`: when pasting its contents into the Actions app's JavaScript code field, the Shortcuts editor crashes. There is a limit on lines and on bytes. For that reason the Shortcut copy is minified and new features are costed in bytes in [FEATURES.md](FEATURES.md).
 
 I've tested on iOS 26.3.1(a) and 26.6.1 (iPhone 14).  If you hit this issue on your device, please open an issue with your iOS version. Might not be fixable 🙁. 
 

@@ -14,6 +14,10 @@ module.exports = [
   "# H :tags:\n\n> q\n\n1. a\n2. b\n\n[l](/u \"t\") ![i](/p.png)",
   "```\n#+END_SRC\nstill code\n```",
   "\\*lit\\* and ***both*** and `a=b`",
+  // A code span whose contents would end the markup wrapping it. Both cases
+  // unwrap: the span loses its monospace and the characters are kept.
+  "[see `a]]b` now](/u)",
+  "| `a|b` | c |\n|---|---|\n| 1 | 2 |",
   "** x **",
   "* * *",
   "Title\n=====",

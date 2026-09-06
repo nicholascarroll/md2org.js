@@ -406,8 +406,15 @@ return d;
 function escapeCell(text) {
 return String(text).replace(/\|/g, "\\vert{}");
 }
+function linkType(path) {
+return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)   // LINKTYPE:...
+|| /^[/~#]/.test(path)                      // FILENAME or #CUSTOM-ID
+|| /^\.\.?\//.test(path);                    // ./ or ../ FILENAME
+}
 function escapeLinkPath(path) {
-return String(path).replace(/([\[\]\\])/g, "\\$1");
+var p = String(path);
+if (p && !linkType(p)) p = "file:" + p;
+return p.replace(/([\[\]\\])/g, "\\$1");
 }
 function fnLabel(s) {
 return String(s).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "fn";
@@ -440,12 +447,22 @@ var inCell = false;
 var inFnDef = false;
 var quoteDepth = 0;       // inside a quote block
 var boldHeading = 0;      // current heading is being written as bold text
+var addedEnt = "";        // entities md2org put on the current line
 function pad() { return indent.join(""); }
+function ent(before, after, name) {
+if (before !== after && addedEnt.indexOf(name) === -1)
+addedEnt += (addedEnt ? ", " : "") + name;
+return after;
+}
 function push(s) { if (s) { line += s; atLineStart = false; } }
 function endLine() {
 if (listStack.length) line = line.replace(/^(\s*(?:-|\d+\.) )\[x\] /, "$1[X] ");
 if (inPara && !pad() && /^\*+\s/.test(line))
 renderOrg.warn.push({ n: out.length + 1, t: line });
+if (addedEnt) {
+renderOrg.warn.push({ n: out.length + 1, t: "added " + addedEnt });
+addedEnt = "";
+}
 out.push(line);
 line = "";
 atLineStart = true;
@@ -463,12 +480,12 @@ function noteEnd(node) {
 if (node.sourcepos) lastEnd = node.sourcepos[1][0];
 }
 function text(s) {
-var t = inCell ? esc.escapeCell(s) : s;
-if (linkDepth > 0) t = esc.escapeLinkDesc(t, line.slice(-1));
+var t = inCell ? ent(s, esc.escapeCell(s), "\\vert{}") : s;
+if (linkDepth > 0) t = ent(t, esc.escapeLinkDesc(t, line.slice(-1)), "\\zwnj{}");
 push(t);
 }
 function closeLink() {
-if (line.slice(-1) === "]") push("\\zwnj{}");
+if (line.slice(-1) === "]") { push("\\zwnj{}"); ent(0, 1, "\\zwnj{}"); }
 push("]]");
 }
 function emitBlockLines(str) {
@@ -519,8 +536,16 @@ push(pad());
 atLineStart = true;
 break;
 case "code":
-if (inCell && node.literal.indexOf("|") !== -1) push(esc.escapeCell(node.literal));
-else push(esc.codeSpan(node.literal));
+var lit = node.literal;
+var breaksCell = inCell && lit.indexOf("|") !== -1;
+var breaksLink = linkDepth > 0 && lit.indexOf("]]") !== -1;
+if (breaksCell || breaksLink) {
+var bare = breaksCell ? ent(lit, esc.escapeCell(lit), "\\vert{}") : lit;
+if (linkDepth > 0) bare = ent(bare, esc.escapeLinkDesc(bare, line.slice(-1)), "\\zwnj{}");
+push(bare);
+} else {
+push(esc.codeSpan(lit));
+}
 break;
 case "emph":
 push("/");

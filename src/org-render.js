@@ -56,8 +56,20 @@ function renderOrg(ast, esc) {
   var inFnDef = false;
   var quoteDepth = 0;       // inside a quote block
   var boldHeading = 0;      // current heading is being written as bold text
+  var addedEnt = "";        // entities md2org put on the current line
 
   function pad() { return indent.join(""); }
+
+  // An entity is the only thing md2org ever puts in the document that the author
+  // did not write, so DESIGN.md invariant 4 requires it be reported. Detected by
+  // comparing an escape's input with its output rather than by scanning the
+  // finished line: an author may write "\\vert{}" in their Markdown, and under the
+  // pass-through contract that arrives verbatim and is not ours to claim.
+  function ent(before, after, name) {
+    if (before !== after && addedEnt.indexOf(name) === -1)
+      addedEnt += (addedEnt ? ", " : "") + name;
+    return after;
+  }
   function push(s) { if (s) { line += s; atLineStart = false; } }
 
   function endLine() {
@@ -71,6 +83,10 @@ function renderOrg(ast, esc) {
     // numbers, so they are true for the file the reader is holding.
     if (inPara && !pad() && /^\*+\s/.test(line))
       renderOrg.warn.push({ n: out.length + 1, t: line });
+    if (addedEnt) {
+      renderOrg.warn.push({ n: out.length + 1, t: "added " + addedEnt });
+      addedEnt = "";
+    }
     out.push(line);
     line = "";
     atLineStart = true;
@@ -100,9 +116,9 @@ function renderOrg(ast, esc) {
   // by the contract it is not ours to touch — see DESIGN.md. Text nodes are the
   // leaves of the tree, and re-serialising a tree copies its leaves.
   function text(s) {
-    var t = inCell ? esc.escapeCell(s) : s;
+    var t = inCell ? ent(s, esc.escapeCell(s), "\\vert{}") : s;
     // Not the author's text being neutralised - the link wrapper is ours.
-    if (linkDepth > 0) t = esc.escapeLinkDesc(t, line.slice(-1));
+    if (linkDepth > 0) t = ent(t, esc.escapeLinkDesc(t, line.slice(-1)), "\\zwnj{}");
     push(t);
   }
 
@@ -111,7 +127,7 @@ function renderOrg(ast, esc) {
   // zero-width non-joiner. escapeLinkDesc cannot catch this: the collision only
   // exists once the closer is appended.
   function closeLink() {
-    if (line.slice(-1) === "]") push("\\zwnj{}");
+    if (line.slice(-1) === "]") { push("\\zwnj{}"); ent(0, 1, "\\zwnj{}"); }
     push("]]");
   }
 
@@ -182,11 +198,30 @@ function renderOrg(ast, esc) {
         break;
 
       case "code":
-        // A cell cannot hold a bare "|", and an entity inside verbatim is not
-        // expanded, so a code span carrying one has to lose its monospace. Same
+        // A code span whose contents would break the markup wrapping it has to
+        // lose its monospace. The escape cannot go inside the delimiters: entities
+        // are not expanded within verbatim or code (§Text Markup: CONTENTS is a
+        // string), so "\vert{}" or "\zwnj{}" there would be displayed literally.
+        // Dropping the monospace and keeping the characters right is the same
         // resolution as a span holding both "=" and "~".
-        if (inCell && node.literal.indexOf("|") !== -1) push(esc.escapeCell(node.literal));
-        else push(esc.codeSpan(node.literal));
+        //
+        // Two wrappers can be broken. A table cell ends at a bare "|". A link
+        // description ends at "]]" — and that one used to escape the guard
+        // entirely, because escapeLinkDesc is applied to text nodes and a code
+        // span is not a text node, so a description holding a code span with "]]"
+        // in it emitted a link that Org closed early, mid-description.
+        var lit = node.literal;
+        var breaksCell = inCell && lit.indexOf("|") !== -1;
+        var breaksLink = linkDepth > 0 && lit.indexOf("]]") !== -1;
+        if (breaksCell || breaksLink) {
+          var bare = breaksCell ? ent(lit, esc.escapeCell(lit), "\\vert{}") : lit;
+          // Inside a description the unwrapped text is now ordinary description
+          // content, so it takes the same escaping every other text node takes.
+          if (linkDepth > 0) bare = ent(bare, esc.escapeLinkDesc(bare, line.slice(-1)), "\\zwnj{}");
+          push(bare);
+        } else {
+          push(esc.codeSpan(lit));
+        }
         break;
 
       case "emph":

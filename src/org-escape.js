@@ -71,9 +71,28 @@ function escapeCell(text) {
 /*
  * Link paths. §Regular Link sanctions a backslash escape for "]" and "\" inside
  * PATHREG, which is the one place Org has one.
+ *
+ * PATHREG also decides what KIND of link this is, and the default is not the one
+ * Markdown means. A bare "url" or "a/b.md" matches none of the annotated patterns
+ * except FUZZY, so Org reads it as a search for a headline of that name in the
+ * same document, and export fails with "Unable to resolve link". Markdown means a
+ * relative URL. "(foo)" is worse: it matches CODEREF.
+ *
+ * So anything that is not already unambiguous gets the "file:" LINKTYPE, which is
+ * what Org uses for a relative path. Left alone: a path with its own LINKTYPE
+ * ("http:", "mailto:", "id:"), one that starts with "/", "~", "./" or "../" and so
+ * is already FILENAME, and "#anchor", which is CUSTOM-ID.
  */
+function linkType(path) {
+  return /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(path)   // LINKTYPE:...
+      || /^[/~#]/.test(path)                      // FILENAME or #CUSTOM-ID
+      || /^\.\.?\//.test(path);                    // ./ or ../ FILENAME
+}
+
 function escapeLinkPath(path) {
-  return String(path).replace(/([\[\]\\])/g, "\\$1");
+  var p = String(path);
+  if (p && !linkType(p)) p = "file:" + p;
+  return p.replace(/([\[\]\\])/g, "\\$1");
 }
 
 /* --8<-- core end */

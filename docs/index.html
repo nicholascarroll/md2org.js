@@ -181,12 +181,46 @@
 
     input.addEventListener("input", render);
 
+    function flash(msg) {
+      var was = copyBtn.dataset.label || copyBtn.textContent;
+      copyBtn.dataset.label = was;
+      copyBtn.textContent = msg;
+      setTimeout(function () { copyBtn.textContent = copyBtn.dataset.label; }, 1400);
+    }
+
+    /*
+     * navigator.clipboard exists only in a secure context. Over plain http it is
+     * undefined in Chromium browsers, and the old handler called .writeText on it
+     * directly, so the button threw and did nothing at all — no error, no copy.
+     * Feature-detect, fall back to the older selection-based copy, and if both
+     * fail say so on the button rather than failing silently.
+     */
+    function legacyCopy(text) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      // Off-screen rather than display:none — a hidden element cannot be selected.
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);   // iOS needs the explicit range
+      var ok = false;
+      try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
     copyBtn.addEventListener("click", function () {
-      navigator.clipboard.writeText(output.textContent).then(function () {
-        var was = copyBtn.textContent;
-        copyBtn.textContent = "Copied";
-        setTimeout(function () { copyBtn.textContent = was; }, 1200);
-      });
+      var text = output.textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () { flash("Copied"); },
+          function () { flash(legacyCopy(text) ? "Copied" : "Press \u2318/Ctrl+C"); }
+        );
+      } else {
+        flash(legacyCopy(text) ? "Copied" : "Press \u2318/Ctrl+C");
+      }
     });
 
     render();

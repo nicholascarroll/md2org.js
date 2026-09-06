@@ -43,13 +43,14 @@ implement yet; the issues are in [DESIGN.md](DESIGN.md).
 | `` `code` `` | `=code=` | `~code~` when it contains `=`; plain text when it contains both, since no Org object can hold that |
 | `~~strike~~` | `+strike+` | |
 | `[t](/u)` | `[[/u][t]]` | |
+| `[t](u)`, `[t](a/b.md)` | `[[file:u][t]]` | a bare relative path is a FUZZY link to Org, which searches the document for a headline of that name; `file:` is the relative-path link type |
 | `[t][ref]` + definition | `[[/u][t]]` | |
 | `[t]()` | `t` | an empty PATHREG is not a link; the description is the only content |
 | `[](/u)` | `[[/u]]` | a description must hold one or more objects |
 | `[t](/u "title")` | `[[/u][t]]` | title dropped; Org links have no title slot |
 | `![alt](/i.png)` | `[[/i.png][alt]]` | |
 | `[![alt](/i.png)](/u)` | `[[/u][/i.png]]` | badges; alt text dropped |
-| ``[see `a]]b` now](/u)`` | link ends early — broken | **open issue 4**: unwrap the code span, keep the characters |
+| ``[see `a]]b` now](/u)`` | `[[/u][see a]\zwnj{}]b now]]` | a code span holding `]]` in a description unwraps: monospace lost, characters kept |
 | `<http://e.com>` | `[[http://e.com][http://e.com]]` | |
 | Bare `http://…` | unchanged | Org parses plain links natively |
 | Hard line break | `\\` | |
@@ -72,7 +73,7 @@ implement yet; the issues are in [DESIGN.md](DESIGN.md).
 | `[^x y]` and `[^x-y]` | `[fn:x-y]`, `[fn:x-y-2]` | a counter keeps colliding labels distinct |
 | Footnote definition, indented or in a quote | a footnote definition | definitions are a block in the forked parser |
 | Multi-paragraph footnote body | joined into one line | an Org definition ends at a blank line, so it cannot hold two paragraphs |
-| `www.` and bare email autolinks | unchanged | **open issue 5** — the GFM autolink extension is not implemented. `http://` and `https://` still work, because Org recognises a bare URL itself; `www` is not an Org link type and email needs `mailto:` |
+| `www.` and bare email autolinks | unchanged | **open issue 4** — the GFM autolink extension is not implemented. `http://` and `https://` still work, because Org recognises a bare URL itself; `www` is not an Org link type and email needs `mailto:` |
 
 ## Passes through unchanged
 
@@ -119,14 +120,22 @@ This table is the whole of the escaping in the program. All of it lives in
 | `*` or `#+` at line start inside any block | comma-quoted |
 | `,*` or `,#+` at line start inside any block | one comma added, per `org-escape-code-in-string` |
 | `]` or `\` in a link path | percent-encoded by the parser; backslash-escaped after that, the one escape §Regular Link sanctions |
-| `]]` in a link description | separated by `\zwnj{}` — but not when it comes from a code span, which is open issue 4 |
+| `]]` in a link description | separated by `\zwnj{}`, whether it arrives as text or inside a code span |
+| `]]` in a code span in a link description | the span unwraps first — an entity inside verbatim would not be expanded |
 | `\|` in a table cell | becomes the `\vert{}` entity |
 | `=` and `~` together in a code span | monospace dropped, characters kept |
 
 Comma-quoting is Org's own mechanism and is reversed on read. The last three rows are not the escaping the contract forbids — the link wrapper, the table markup and the code-span delimiters are all markup md2org *generates*, breaking on the content they wrap, and Org gives those slots no escape syntax. Nothing here touches the author's literal text.
 
-The two entities are the only characters in the output the author didn't write.
-See DESIGN.md open issue 2.
+The two entities are the only characters in the output the author didn't write,
+and both are reported in the warnings footer — see the README. `\vert{}` is the
+escape the Org manual itself prescribes for a pipe in a table field. `\zwnj{}` is
+not: Org offers no escape for `]]` in a link description, so a zero-width
+non-joiner separates the pair. Both export to the character the author typed,
+which `npm run test:emacs` verifies against a real Org parser.
+
+A backslash escape, `]\]`, was tried and rejected: Org parses it, but never strips
+the backslashes, so they survive into every export.
 
 ---
 
@@ -142,6 +151,7 @@ Org has no equivalent, so the first rule can't be kept in full.
 | Faithful raw HTML | export blocks survive HTML export and vanish everywhere else |
 | `&HilbertSpace;` and similar | the full entity table far exceeds the bytes budget |
 | Bullet character, emphasis spelling | CommonMark's tree doesn't record which was used |
+| `[Install](#install)`, a table of contents | Org anchors must be declared as `CUSTOM_ID` properties. Fails on whole doc. |
 
 ## Out of scope by design
 

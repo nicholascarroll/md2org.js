@@ -68,7 +68,7 @@ function generate() {
 }
 
 /*
- * Known-accepted failure modes: DESIGN.md open issue 1.
+ * Known-accepted failure modes: DESIGN.md D1.
  *
  * A literal "#+BEGIN_SRC" or "#+END_SRC" in the source passes through under the
  * contract, where it can pair with a delimiter md2org emitted. That was accepted
@@ -125,7 +125,7 @@ const known = [...modes].filter(([mode]) => accepted(mode));
 
 if (known.length) {
   console.log("  accepted     " + known.length + " mode" + (known.length > 1 ? "s" : "") +
-              " — DESIGN.md issue 1, stray #+BEGIN_/#+END_ in the corpus");
+              " — DESIGN.md D1, stray #+BEGIN_/#+END_ in the corpus");
   for (const [mode] of known) console.log("               " + mode);
 }
 

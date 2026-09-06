@@ -130,9 +130,15 @@ check("./ and ../ and / are already file paths",
 check("a link type is left alone",
   "[a](http://x/y) [b](mailto:p@q.r)",
   "[[http://x/y][a]] [[mailto:p@q.r][b]]");
-check("#anchor is a custom-id, not a file",
+// Anchors are not supported. Org resolves a "#" link against CUSTOM_ID
+// properties, which Markdown never declares, and one unresolvable anchor makes
+// the exporter fail on the whole document. The description is kept as text.
+check("#anchor is not a link",
   "[a](#sec)",
-  "[[#sec][a]]");
+  "a");
+check("a table of contents keeps its words and still exports",
+  "- [Install](#install)\n- [Usage](#usage)\n\n## Install\n\n## Usage",
+  "- Install\n- Usage\n\n** Install\n\n** Usage");
 check("link whose text is code", "[`fn`](u)", "[[file:u][=fn=]]");
 
 console.log("LISTS");
@@ -190,7 +196,7 @@ check("leading asterisk passes through",
   "*star at col 0");
 check("** at line start passes through and is warned",
   "** x **",
-  "** x **\n\n# md2org warnings:\n# line 1: ** x **");
+  "** x **\n\n# md2org warnings:\n# heading: line 1");
 check("emphasis nests rather than crossing",
   "***both***",
   "/*both*/");
@@ -280,19 +286,19 @@ check("image inside link text alongside words",
 // bracket fell outside the link — valid Org, so org-validate.js did not catch it.
 check("description ending in ] does not close the link early",
   "[a\\]](/u)",
-  "[[/u][a]\\zwnj{}]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+  "[[/u][a]\\zwnj{}]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
 check("]] split across text nodes is guarded",
   "[a\\]\\]b](/u)",
-  "[[/u][a]\\zwnj{}]b]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+  "[[/u][a]\\zwnj{}]b]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
 // A code span is not a text node, so escapeLinkDesc never saw it and "]]" inside
 // one closed the link mid-description. The span unwraps: monospace lost,
 // characters kept, same resolution as a pipe inside code in a table cell.
 check("]] inside a code span in a description unwraps the span",
   "[see `a]]b` now](/u)",
-  "[[/u][see a]\\zwnj{}]b now]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+  "[[/u][see a]\\zwnj{}]b now]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
 check("]] inside a code span in an image description unwraps too",
   "![alt `]]` t](/i.png)",
-  "[[/i.png][alt ]\\zwnj{}] t]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+  "[[/i.png][alt ]\\zwnj{}] t]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
 // Only "]]" breaks a description, so a lone "]" keeps its monospace. Unwrapping
 // more than necessary would lose formatting the author asked for.
 check("a single ] in a code span keeps its monospace",
@@ -309,10 +315,10 @@ check("a single ] in a description is left alone",
   "[[/u][a]b]]");
 check("image alt ending in ] is guarded",
   "![alt\\]](/i.png)",
-  "[[/i.png][alt]\\zwnj{}]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+  "[[/i.png][alt]\\zwnj{}]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
 check("autolink ending in ] is guarded",
   "<http://x/ab]>",
-  "[[http://x/ab%5D][http://x/ab]\\zwnj{}]]\n\n# md2org warnings:\n# line 1: added \\zwnj{}");
+  "[[http://x/ab%5D][http://x/ab]\\zwnj{}]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
 
 check("table rule row is an Org rule, not a data row",
   "| a | b |\n| --- | --- |\n| 1 | 2 |",
@@ -322,13 +328,13 @@ check("table alignment becomes a cookie row",
   "| a | b |\n|----+----|\n| <c> | <r> |\n| 1 | 2 |");
 check("escaped pipe in a plain cell becomes an entity",
   "| a |\n| --- |\n| x \\| y |",
-  "| a |\n|----|\n| x \\vert{} y |\n\n# md2org warnings:\n# line 3: added \\vert{}");
+  "| a |\n|----|\n| x \\vert{} y |\n\n# md2org warnings:\n# \\vert{}: line 3");
 // Entities are not expanded inside verbatim (§Text Markup: CONTENTS is a string),
 // so a pipe inside code in a cell cannot be escaped in place. The span is
 // unwrapped: the text stays correct, only the monospace is lost.
 check("pipe inside code in a cell unwraps the code span",
   "| a |\n| --- |\n| \`Alt-\\|\` |",
-  "| a |\n|----|\n| Alt-\\vert{} |\n\n# md2org warnings:\n# line 3: added \\vert{}");
+  "| a |\n|----|\n| Alt-\\vert{} |\n\n# md2org warnings:\n# \\vert{}: line 3");
 check("code span without a pipe keeps its markup",
   "| a |\n| --- |\n| \`fmt\` |",
   "| a |\n|----|\n| =fmt= |");

@@ -1,5 +1,18 @@
 # Changelog
 
+
+## [Unreleased]
+
+### Added
+
+
+### Changed
+- Warnings Footer now reports per warning category.
+
+### Fixed
+
+
+
 ## [1.0.1] — 2026-09-06
 
 ### Added

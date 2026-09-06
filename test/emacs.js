@@ -105,8 +105,8 @@ function bad(name, detail) { console.log("  FAIL " + name + "\n         " + deta
 /*
  * Each case: Markdown in, plus what Org should find once md2org has converted it.
  *   desc  — the description text Org parses out of the link, which catches a link
- *           that closed early. A truncated description is the whole bug in
- *           DESIGN.md open issue 4.
+ *           that closed early. A truncated description was the bug fixed in
+ *           1.0.1: a code span holding "]]" ended the link early.
  *   text  — a string that must appear in the ASCII export. This is where an entity
  *           has to disappear and leave the author's character behind.
  */

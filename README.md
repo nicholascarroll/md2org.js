@@ -46,7 +46,7 @@ md2org will write any warnings to the tail of the Org mode output as comments. F
 
 ```
 # md2org warnings:
-# line 2: ** foo
+# heading
 ```
 This is warning you that line 2 of your output was not a heading in the source but is now.
 
@@ -56,7 +56,7 @@ If you see this:
 
 ```
 # md2org warnings:
-# line 3: added \vert{}
+# \vert{}
 ```
 It is because in the source Markdown you had a `|` in a table cell. Org's solution for that is to use the the Org entity `\vert{}` to represent the `|`. 
 

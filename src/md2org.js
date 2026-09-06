@@ -39,7 +39,7 @@ if (typeof codeSpan === "undefined") {
 function md2org(src) {
   if (typeof src !== "string") src = String(src == null ? "" : src);
   if (src === "") return "";
-  renderOrg.warn = [];
+  renderOrg.warn = {};
 
   var parser = new __cmark.Parser({ sourcepos: true });
 
@@ -52,8 +52,9 @@ function md2org(src) {
   };
 
   var out = renderOrg(parser.parse(src), escapes);
-  return renderOrg.warn.length ? out + "\n\n# md2org warnings:\n" +
-    renderOrg.warn.map(function (w) { return "# line " + w.n + ": " + w.t; }).join("\n") : out;
+  var k = Object.keys(renderOrg.warn);
+  return k.length ? out + "\n\n# md2org warnings:\n" +
+    k.map(function (x) { return "# " + x + ": line " + renderOrg.warn[x].join(", "); }).join("\n") : out;
 }
 
 /* --8<-- core end */

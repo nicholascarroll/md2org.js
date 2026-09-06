@@ -17,7 +17,7 @@ graph LR
    document's structure when Org reads it.
 5. Table cell content is never processed as headings or lists.
 
-Invariant 1 is not implemented as a property test (see open issue 3).
+Invariant 1 is not implemented as a property test (see D2).
 
 ## How Org syntax in the source document fares
 
@@ -82,7 +82,7 @@ from one file and are raised only by pasting a bigger one.
 
 ## Open issues
 
-### 1. Block delimiters can pair with ones md2org emits
+### D1. Block delimiters can pair with ones md2org emits
 
 A literal `#+END_SRC` in the source now passes through, where it can close a
 block md2org opened. A literal `#+BEGIN_SRC` can find its partner in the
@@ -120,7 +120,7 @@ Still open: extend the warning block to list stray `#+BEGIN_`/`#+END_` lines the
 way it lists `**`, or re-guard `#+` and lose the pass-through.
 
 
-### 2. Static validation of the output is weaker than it was
+### D2. Static validation of the output is weaker than it was
 
 `test/org-validate.js` was a total oracle: it could judge any output without
 being told the answer, which is what makes `test/fuzz.js` work. Under the
@@ -133,7 +133,7 @@ The invariant in §1 is the replacement and is stronger where it applies: every
 non-markup character in the source appears in the output. It is not yet
 implemented as a property test.
 
-### 3. `www.` and bare email autolinks are not implemented
+### D3. `www.` and bare email autolinks are not implemented
 
 The GFM autolink extension. `http://` and `https://` work anyway because Org
 recognises a bare URL itself, so only the two forms Org does not know are missing.

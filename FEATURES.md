@@ -73,7 +73,7 @@ implement yet; the issues are in [DESIGN.md](DESIGN.md).
 | `[^x y]` and `[^x-y]` | `[fn:x-y]`, `[fn:x-y-2]` | a counter keeps colliding labels distinct |
 | Footnote definition, indented or in a quote | a footnote definition | definitions are a block in the forked parser |
 | Multi-paragraph footnote body | joined into one line | an Org definition ends at a blank line, so it cannot hold two paragraphs |
-| `www.` and bare email autolinks | unchanged | **open issue 4** — the GFM autolink extension is not implemented. `http://` and `https://` still work, because Org recognises a bare URL itself; `www` is not an Org link type and email needs `mailto:` |
+| `www.` and bare email autolinks | unchanged | **D3** — the GFM autolink extension is not implemented. `http://` and `https://` still work, because Org recognises a bare URL itself; `www` is not an Org link type and email needs `mailto:` |
 
 ## Passes through unchanged
 

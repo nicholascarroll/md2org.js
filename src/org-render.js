@@ -40,7 +40,7 @@ function renderOrg(ast, esc) {
   }
   function fnRef(r) { return defined[r] !== undefined ? defined[r] : null; }
 
-  if (!renderOrg.warn) renderOrg.warn = [];
+  if (!renderOrg.warn) renderOrg.warn = {};
   var out = [];
   var line = "";
   var indent = [];
@@ -56,7 +56,10 @@ function renderOrg(ast, esc) {
   var inFnDef = false;
   var quoteDepth = 0;       // inside a quote block
   var boldHeading = 0;      // current heading is being written as bold text
-  var addedEnt = "";        // entities md2org put on the current line
+  function warnAt(k) {
+    var a = renderOrg.warn[k] || (renderOrg.warn[k] = []), n = out.length + 1;
+    if (a[a.length - 1] !== n) a.push(n);
+  }
 
   function pad() { return indent.join(""); }
 
@@ -66,8 +69,7 @@ function renderOrg(ast, esc) {
   // finished line: an author may write "\\vert{}" in their Markdown, and under the
   // pass-through contract that arrives verbatim and is not ours to claim.
   function ent(before, after, name) {
-    if (before !== after && addedEnt.indexOf(name) === -1)
-      addedEnt += (addedEnt ? ", " : "") + name;
+    if (before !== after) warnAt(name);
     return after;
   }
   function push(s) { if (s) { line += s; atLineStart = false; } }
@@ -81,12 +83,7 @@ function renderOrg(ast, esc) {
     // alone - the contract leaves non-Markdown alone - but recorded, because it
     // is the one pass-through construct that re-parents the document. Output line
     // numbers, so they are true for the file the reader is holding.
-    if (inPara && !pad() && /^\*+\s/.test(line))
-      renderOrg.warn.push({ n: out.length + 1, t: line });
-    if (addedEnt) {
-      renderOrg.warn.push({ n: out.length + 1, t: "added " + addedEnt });
-      addedEnt = "";
-    }
+    if (inPara && !pad() && /^\*+\s/.test(line)) warnAt("heading");
     out.push(line);
     line = "";
     atLineStart = true;
@@ -315,10 +312,18 @@ function renderOrg(ast, esc) {
             // link. The path-only form says the same thing and is valid.
             push("[[" + esc.escapeLinkPath(node.destination));
             emptyDesc++;
-          } else if (!node.destination) {
+          } else if (!node.destination || node.destination[0] === "#") {
             // §Regular Link: PATHREG must match one of seven patterns and empty
             // is none of them, so "[[][t]]" is not a link at all. The
             // description is the only content there is; emit it as text.
+            //
+            // A "#anchor" link takes the same path. Markdown derives the target
+            // from the heading text; Org requires it be declared as a CUSTOM_ID
+            // property, and md2org does not add one. Emitting "[[#x][t]]" leaves
+            // a link Org cannot resolve, and the exporter fails on the WHOLE
+            // document rather than on the link -- one unresolvable anchor and
+            // there is no output at all. Anchors are unsupported, so the
+            // description is emitted as text and the document still exports.
             bareDesc++;
           } else {
             push("[[" + esc.escapeLinkPath(node.destination) + "][");

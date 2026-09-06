@@ -43,7 +43,7 @@ Such lines aren't altered, but they raise a warning in a comment block at the ta
 
 ```org
 # md2org warnings:
-# headings: line 4
+# heading: line 4
 ```
 
 - **Output, not source, line numbers**

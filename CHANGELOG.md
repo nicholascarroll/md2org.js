@@ -10,7 +10,7 @@
 - Warnings Footer now reports per warning category.
 
 ### Fixed
-
+- #1 `[Foo](#foo)` used to produce a link and now produces plain text.
 
 
 ## [1.0.1] — 2026-09-06

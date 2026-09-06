@@ -431,7 +431,7 @@ taken[lab] = 1;
 defined[raw] = lab;
 }
 function fnRef(r) { return defined[r] !== undefined ? defined[r] : null; }
-if (!renderOrg.warn) renderOrg.warn = [];
+if (!renderOrg.warn) renderOrg.warn = {};
 var out = [];
 var line = "";
 var indent = [];
@@ -447,22 +447,19 @@ var inCell = false;
 var inFnDef = false;
 var quoteDepth = 0;       // inside a quote block
 var boldHeading = 0;      // current heading is being written as bold text
-var addedEnt = "";        // entities md2org put on the current line
+function warnAt(k) {
+var a = renderOrg.warn[k] || (renderOrg.warn[k] = []), n = out.length + 1;
+if (a[a.length - 1] !== n) a.push(n);
+}
 function pad() { return indent.join(""); }
 function ent(before, after, name) {
-if (before !== after && addedEnt.indexOf(name) === -1)
-addedEnt += (addedEnt ? ", " : "") + name;
+if (before !== after) warnAt(name);
 return after;
 }
 function push(s) { if (s) { line += s; atLineStart = false; } }
 function endLine() {
 if (listStack.length) line = line.replace(/^(\s*(?:-|\d+\.) )\[x\] /, "$1[X] ");
-if (inPara && !pad() && /^\*+\s/.test(line))
-renderOrg.warn.push({ n: out.length + 1, t: line });
-if (addedEnt) {
-renderOrg.warn.push({ n: out.length + 1, t: "added " + addedEnt });
-addedEnt = "";
-}
+if (inPara && !pad() && /^\*+\s/.test(line)) warnAt("heading");
 out.push(line);
 line = "";
 atLineStart = true;
@@ -609,7 +606,7 @@ nestedSkip++;
 } else if (node.destination && !node.firstChild) {
 push("[[" + esc.escapeLinkPath(node.destination));
 emptyDesc++;
-} else if (!node.destination) {
+} else if (!node.destination || node.destination[0] === "#") {
 bareDesc++;
 } else {
 push("[[" + esc.escapeLinkPath(node.destination) + "][");
@@ -744,7 +741,7 @@ return out.join("\n");
 function md2org(src) {
 if (typeof src !== "string") src = String(src == null ? "" : src);
 if (src === "") return "";
-renderOrg.warn = [];
+renderOrg.warn = {};
 var parser = new __cmark.Parser({ sourcepos: true });
 var escapes = {
 codeSpan: codeSpan,
@@ -754,8 +751,9 @@ protectBlockBody: protectBlockBody,
 escapeCell: escapeCell
 };
 var out = renderOrg(parser.parse(src), escapes);
-return renderOrg.warn.length ? out + "\n\n# md2org warnings:\n" +
-renderOrg.warn.map(function (w) { return "# line " + w.n + ": " + w.t; }).join("\n") : out;
+var k = Object.keys(renderOrg.warn);
+return k.length ? out + "\n\n# md2org warnings:\n" +
+k.map(function (x) { return "# " + x + ": line " + renderOrg.warn[x].join(", "); }).join("\n") : out;
 }
 
 

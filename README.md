@@ -58,7 +58,7 @@ If you see this:
 # md2org warnings:
 # \vert{}: line 3
 ```
-It is because in the source Markdown you had `\|` in a table cell and that hs not been substituted for `\vert{}`, which is the Org entity that represents `|`.
+It is because in the source Markdown you had `\|` in a table cell and that has been substituted for `\vert{}`, which is the Org entity that represents `|`.
 
 If the source Markdown contains a hyperlink with `]]` in the link description, md2org will replace that with `]\zwnj{}]` and show it in the Warnings Footer. The Org entity `\zwnj` is the Zero Width Non-joiner Unicode character.  The `\zwnj{}` is invisible, so `]\zwnj{}]` reads as `]]` in HTML, ASCII or LaTeX Emacs export formats.  Emacs' `org-pretty-entities` controls display of these in editor.
 

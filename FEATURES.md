@@ -151,7 +151,7 @@ Org has no equivalent, so the first rule can't be kept in full.
 | Faithful raw HTML | export blocks survive HTML export and vanish everywhere else |
 | `&HilbertSpace;` and similar | the full entity table far exceeds the bytes budget |
 | Bullet character, emphasis spelling | CommonMark's tree doesn't record which was used |
-| `[Install](#install)`, a table of contents | Link stripped; converted to plan text. |
+| `[Install](#install)`, a table of contents | Org anchors must be declared as `CUSTOM_ID` properties |
 
 ## Out of scope by design
 

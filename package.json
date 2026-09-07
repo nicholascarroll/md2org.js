@@ -7,7 +7,7 @@
   },
   "main": "src/md2org.js",
   "scripts": {
-    "test": "node test/spec.js && node test/cli.js && node test/conformance.js && node test/gfm.js && node test/fuzz.js 5000 && node test/size.js",
+    "test": "node test/spec.js && node test/cli.js && node test/conformance.js && node test/gfm.js && node test/document.js && node test/invariant.js && node test/warnings.js && node test/fuzz.js 5000 && node test/size.js && node test/emacs.js",
     "build": "node build.js",
     "vendor": "node tools/build-vendor.js",
     "fuzz": "node test/fuzz.js 100000",

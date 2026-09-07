@@ -27,6 +27,8 @@
  */
 const md2org = require("../src/md2org.js");
 const validate = require("./org-validate.js");
+const invariant1 = require("./invariant.js");
+const accountHeadings = require("./warnings.js");
 
 const FRAGMENTS = [
   "# H", "## H2", "###### H6", "Title\n=====", "para text", "", "   ",
@@ -60,10 +62,51 @@ const seed = parseInt(process.argv[3] || String(Date.now() % 1e9), 10);
 const rnd = mulberry32(seed);
 const pick = arr => arr[Math.floor(rnd() * arr.length)];
 
+/*
+ * Wrappers, so a fragment can go *inside* another construct rather than only
+ * beside it.
+ *
+ * The generator used to join fragments with newlines and never nest one within
+ * another, which left inline-within-inline unreachable — and that is precisely
+ * where the "]]"-in-a-code-span-in-a-link-description defect fixed in 1.0.1
+ * lived. No number of documents could have found it, because no document the
+ * generator could produce contained the shape. A fuzzer that cannot express the
+ * bug class it guards reports a number that feels like assurance and isn't.
+ *
+ * The last three are block wrappers, because a table cell, a quote and a list
+ * item are also containers a construct can be wrong inside.
+ */
+const WRAPPERS = [
+  s => "*" + s + "*",
+  s => "**" + s + "**",
+  s => "_" + s + "_",
+  s => "~~" + s + "~~",
+  s => "`" + s + "`",
+  s => "[" + s + "](/u)",
+  s => '[' + s + '](/u "ti")',
+  s => "![" + s + "](/i.png)",
+  s => "[" + s + "][r]",
+  s => "<" + s + ">",
+  s => "> " + s,
+  s => "- " + s,
+  s => "| " + s + " | b |\n| --- | --- |\n| 1 | 2 |"
+];
+
+/*
+ * Depth is capped at three. Deeper costs generation time and finds nothing new:
+ * what breaks is the interaction between a construct and its immediate
+ * container, and a fourth level is the same pair with more text around it.
+ */
+function nest(depth) {
+  const base = pick(FRAGMENTS);
+  if (depth <= 0 || rnd() < 0.45) return base;
+  return pick(WRAPPERS)(nest(depth - 1));
+}
+
 function generate() {
   const parts = [];
   const n = 1 + Math.floor(rnd() * 7);
-  for (let i = 0; i < n; i++) parts.push(pick(FRAGMENTS));
+  for (let i = 0; i < n; i++) parts.push(nest(3));
   return parts.join(rnd() < 0.5 ? "\n" : "\n\n");
 }
 
@@ -86,12 +129,49 @@ function generate() {
  * occurring is reported at the end so the entry doesn't outlive the bug.
  */
 const ACCEPTED = [
-  /^line N: #\+END_SRC with no matching #\+BEGIN_$/,
-  /^line N: #\+BEGIN_SRC never closed$/,
-  /^line N: #\+END_SRC closes #\+BEGIN_\w+$/,
-  /^line N: #\+BEGIN_SRC with no LANGUAGE$/
+  /^line N: #\+END_\w+ with no matching #\+BEGIN_$/,
+  /^line N: #\+BEGIN_\w+ never closed$/,
+  /^line N: #\+END_\w+ closes #\+BEGIN_\w+$/,
+  /^line N: #\+BEGIN_\w+ with no LANGUAGE$/,
+  // Same root cause, reached only once the generator nests: a source delimiter
+  // carried inside a quote or list that md2org wrapped in a block of its own.
+  // The block names are widened from SRC above for the same reason.
+  /^line N: unquoted '#\+' at start of line inside #\+BEGIN_\w+$/
 ];
+
+/*
+ * Defects. Not the same thing as the list above, and kept apart on purpose.
+ *
+ * ACCEPTED is a decision: the design looked at the failure and chose not to fix
+ * it. KNOWN_OPEN is a debt: the failure is real, nobody has decided anything
+ * except that it is not being fixed in this change. Both exit zero so the suite
+ * has a green state, but collapsing them into one list is how an ACCEPTED list
+ * rots — a consequence gets absorbed alongside a decision and stops being
+ * visible as work outstanding. Every entry here names the issue and the change
+ * that will close it.
+ *
+ * Each is checked at `npm run fuzz` depth for staleness, exactly as ACCEPTED is.
+ */
+const KNOWN_OPEN = [
+  { re: /^Org entity inside verbatim\/code at offset N: /,
+    why: "an entity md2org generated, inside a verbatim span the author's own " +
+         "'=' or '~' formed around it; Org does not expand entities there",
+    closedBy: "DESIGN.md: md2org generates no Org entities" },
+
+  { re: /^invariant 4: \d+ headline\(s\) appeared from nowhere/,
+    why: "a multi-line setext heading emits its continuation lines at column 0, " +
+         "outside the headline, so the heading text is truncated and the rest " +
+         "becomes body; when a continuation starts '** ' it becomes a second " +
+         "headline. Minimal case: \"foo\\nbar\\n===\" -> \"* foo\\nbar\". An Org " +
+         "headline is one line, so a soft break inside heading content has to " +
+         "become a space — which is what pandoc does: CommonMark #81 gives " +
+         "\"* Foo /bar baz/\" there against md2org's \"* Foo /bar\\nbaz/\". " +
+         "Confirmed present in 1.0.1, i.e. not introduced by this change",
+    closedBy: "unfixed — found by this tier, needs a decision" }
+];
+
 const accepted = key => ACCEPTED.some(re => re.test(key));
+const knownOpen = key => KNOWN_OPEN.find(k => k.re.test(key));
 
 let crashes = 0, invalid = 0;
 const modes = new Map();
@@ -108,10 +188,19 @@ for (let i = 0; i < N; i++) {
     if (!modes.has(key)) modes.set(key, { src, out: null });
     continue;
   }
-  const problems = validate(out);
+  // Three oracles, all total: structural validity, DESIGN.md invariant 1, and
+  // invariant 4's heading accounting. None needs to be told the answer, which is
+  // what lets them run on input nobody wrote.
+  const heading = accountHeadings(src);
+  const problems = validate(out)
+    .concat(invariant1(src, out))
+    .concat(heading ? ["invariant 4: " + heading] : []);
   if (problems.length) {
     invalid++;
-    const key = problems[0].replace(/offset \d+/, "offset N").replace(/line \d+/, "line N");
+    const key = problems[0]
+      .replace(/offset \d+/, "offset N")
+      .replace(/line \d+/, "line N")
+      .replace(/ on lines \[[^\]]*\][\s\S]*$/, " on lines [N]");
     seen.add(key);
     if (!modes.has(key)) modes.set(key, { src, out });
   }
@@ -121,13 +210,24 @@ console.log("FUZZ           " + N + " documents, seed " + seed);
 console.log("  crashes      " + crashes);
 console.log("  invalid Org  " + invalid + (invalid ? "  (" + (invalid / N * 100).toFixed(2) + "%)" : ""));
 
-const unexplained = [...modes].filter(([mode]) => !accepted(mode));
+const unexplained = [...modes].filter(([mode]) => !accepted(mode) && !knownOpen(mode));
 const known = [...modes].filter(([mode]) => accepted(mode));
+const open = [...modes].filter(([mode]) => !accepted(mode) && knownOpen(mode));
 
 if (known.length) {
   console.log("  accepted     " + known.length + " mode" + (known.length > 1 ? "s" : "") +
               " — stray #+BEGIN_/#+END_ in the corpus; see DESIGN.md");
   for (const [mode] of known) console.log("               " + mode);
+}
+
+if (open.length) {
+  console.log("  known open   " + open.length + " defect" + (open.length > 1 ? "s" : "") +
+              ", not decisions — see KNOWN_OPEN in test/fuzz.js");
+  for (const [mode] of open) {
+    const k = knownOpen(mode);
+    console.log("               " + mode);
+    console.log("                 closed by: " + k.closedBy);
+  }
 }
 
 if (unexplained.length) {
@@ -148,7 +248,8 @@ if (unexplained.length) {
 // modes appears in roughly one 5,000-document run in six, so at suite depth this
 // would cry wolf.
 if (N >= 100000) {
-  const stale = ACCEPTED.filter(re => ![...seen].some(k => re.test(k)));
+  const stale = ACCEPTED.concat(KNOWN_OPEN.map(k => k.re))
+    .filter(re => ![...seen].some(k => re.test(k)));
   if (stale.length) {
     console.log("  NOTE these ACCEPTED patterns matched nothing this run; if the");
     console.log("       underlying issue is fixed, delete them from test/fuzz.js:");

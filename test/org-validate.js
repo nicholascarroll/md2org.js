@@ -113,7 +113,10 @@ function checkInline(org) {
   // Entities are not expanded inside verbatim or code (§Text Markup: CONTENTS is
   // a string), so an entity there is displayed literally and is almost always a
   // conversion bug rather than an intention.
-  const entInVerbatim = /([=~])[^=~\n]*\\[a-zA-Z]+\{\}[^=~\n]*\1/g;
+  // Org-syntax §Text Markup: CONTENTS may neither begin nor end with whitespace,
+  // so "= x =" is not verbatim and an entity inside it expands normally. Without
+  // that rule this reported leaks a real Org export does not produce.
+  const entInVerbatim = /([=~])(?!\s)[^=~\n]*\\[a-zA-Z]+\{\}[^=~\n]*(?<!\s)\1/g;
   let em;
   while ((em = entInVerbatim.exec(org)) !== null) {
     problems.push("Org entity inside verbatim/code at offset " + em.index + ": " + JSON.stringify(em[0].slice(0, 40)));

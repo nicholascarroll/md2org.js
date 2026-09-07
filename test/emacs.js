@@ -3,9 +3,12 @@
  *
  *   node test/emacs.js
  *
- * NOT part of `npm test`, because it needs Emacs and most work on this project
- * happens without it. Run it on a machine that has Emacs before a release, or
- * whenever a question comes up that only the real parser can settle.
+ * Part of `npm test`, and skipped with a zero exit when Emacs is not installed,
+ * so a machine without it still gets a green suite. CI installs it, which is the
+ * point: this is the only total oracle the project has for *export*, and the
+ * failure it catches — a document that parses fine and exports to nothing — is
+ * invisible to every other tier. Leaving it opt-in meant the check with the most
+ * power ran the least often.
  *
  * Every other tier reasons about Org from specs/org-syntax-v2.org. That is the
  * right primary source — it is what the validator encodes and what keeps the fork
@@ -44,8 +47,8 @@ function haveEmacs() {
 
 if (!haveEmacs()) {
   console.log("EMACS          not installed — skipping.");
-  console.log("               This tier is optional and is not part of `npm test`.");
-  console.log("               Run it on a machine with Emacs: node test/emacs.js");
+  console.log("               The only oracle for export. CI runs it; install");
+  console.log("               emacs to run it here: node test/emacs.js");
   process.exit(0);
 }
 
@@ -128,6 +131,18 @@ const CASES = [
   { name: "zwnj is invisible in the export",
     md: "[a&#93;&#93;b](/u)", text: "a]]b" },
 
+  /*
+   * Entities, fed to the leak guard below rather than to an expectation. The
+   * guard asks one question of every case: did md2org put an Org entity in the
+   * file that Org will not turn back into a character? Whichever way the entity
+   * story goes — resolved to the character, or passed through as the author
+   * wrote it — the answer must be no. It is the only check that can catch a
+   * generated "\\name{}" for a name Org does not know, and it needs an entity in
+   * the corpus to have anything to catch.
+   */
+  { name: "entities leave no unresolved markup",
+    md: "&amp; &apos; &divide; &mdash; &copy; &HilbertSpace; &frac12;" },
+
   { name: "vert is a pipe in the export",
     md: "| a |\n| --- |\n| x \\| y |", text: "x | y" },
 
@@ -199,14 +214,56 @@ CASES.forEach((c, i) => {
 
 // No entity md2org generates may survive into an export: the whole justification
 // for using one is that the reader gets the character back.
+// Any generated entity, not a hand-kept list of the two that existed when this
+// was written. A guard that names its targets stops covering the feature the
+// moment the feature grows, and this one exists precisely to catch a name Org
+// turns out not to know.
+/*
+ * Applied to the cases above and not to the documents below. On a real document
+ * this cannot tell a generated entity from one the author typed inside a code
+ * span while documenting the feature — this repository's own README does exactly
+ * that — which is DESIGN.md's "static validation is weaker than it was" in
+ * miniature. On a case the input is controlled, so the finding is unambiguous.
+ */
+const ENTITY = /\\[a-zA-Z][a-zA-Z0-9]*\{\}/;
 const leaked = answers
   .map((a, i) => [CASES[i].name, a.ascii])
-  .filter(([, ascii]) => /\\(vert|zwnj)\{\}/.test(ascii));
+  .filter(([, ascii]) => ENTITY.test(ascii));
 if (leaked.length) {
   leaked.forEach(([name, ascii]) =>
     bad(name + " (entity leaked into export)", JSON.stringify(ascii.trim())));
 } else {
   ok("no generated entity survives into an export");
+}
+
+/*
+ * Document scale.
+ *
+ * test/document.js converts the repository's own Markdown and asserts the result
+ * is structurally valid Org. It cannot go further, because the failure this
+ * guards against is not malformed output: a link Org cannot resolve is perfectly
+ * valid Org, and Org's exporter can still refuse the whole document over it.
+ * Every static tier stays green throughout.
+ *
+ * So the question only Org can answer is asked here, on whole documents rather
+ * than constructs: does it come out the other side?
+ */
+const DOCS = ["README.md", "DESIGN.md", "FEATURES.md", "CHANGELOG.md"];
+const docFiles = DOCS
+  .map(r => path.join(__dirname, "..", r))
+  .filter(f => fs.existsSync(f));
+
+if (docFiles.length) {
+  const docOrgs = docFiles.map(f => md2org(fs.readFileSync(f, "utf8")));
+  const docAnswers = askOrg(docOrgs);
+
+  docFiles.forEach((f, i) => {
+    const name = path.basename(f) + " exports";
+    const ascii = docAnswers[i].ascii;
+    if (/^EXPORT-ERROR/.test(ascii)) bad(name, ascii);
+    else if (!ascii.trim()) bad(name, "exported to nothing at all");
+    else ok(name);
+  });
 }
 
 console.log("");

@@ -67,13 +67,26 @@ const cmark = require("../src/vendor/commonmark.js");
  */
 function unescape(org) {
   return org
-    .replace(/\\vert\{\}/g, "|")        // a pipe in a table cell
-    .replace(/\\zwnj\{\}/g, "")         // the separator inside "]]"
+    // A pipe in a table cell. Not an escape md2org invented — the author wrote
+    // "\\|", GFM required them to, and the parser consumed the backslash as
+    // Markdown escape markup before this file ever sees a leaf. md2org puts it
+    // back, so the leaf says "|" while the output says "\\|". Stripped again here
+    // to compare like with like.
+    .replace(/\\\|/g, "|")
     // Org's own comma-quoting, reversed the way Org reverses it on read. Mirrors
     // protectBlockBody in src/org-escape.js, which quotes after any indentation
     // and after any commas already there.
     .replace(/^([ \t]*)(,*),(\*|#\+)/gm, "$1$2$3");
 }
+
+/*
+ * What is no longer reversed here is the point. The \vert{} and \zwnj{} lines
+ * that used to sit above are gone with the escapes that produced them, and this
+ * file is stronger for their absence: an oracle that reverses fewer of the
+ * program's own inventions before comparing is grading less of the answer with
+ * the answer key. What remains restores a character the *parser* removed, not one
+ * md2org chose to add.
+ */
 
 /*
  * Collect the content characters, skipping the two documented losses.
@@ -104,17 +117,20 @@ function contentLeaves(ast) {
     if ((type === "html_block" || type === "html_inline") &&
         /^\s*<!--/.test(node.literal)) continue;
 
-    // A tag is markup, so rule 1 governs it and md2org may rewrap or fold it.
-    // The text between tags is content, and DESIGN.md invariant 6 is the promise
-    // that it survives, so that is what is checked. Compared line by line and
-    // trimmed, because md2org re-indents an HTML region carried inside a list
-    // item: the words are what invariant 6 promises, their leading whitespace is
-    // the container's business.
+    // Raw HTML. CommonMark's two forms are not the same thing and are not checked
+    // the same way.
+    //
+    // An HTML *block* is opaque: CommonMark suspends parsing for the whole region
+    // and the literal is the region entire, tags and text alike. md2org passes it
+    // through into an export block, so it is checked as one string, line by line.
+    // Trimmed, because a region carried inside a list item is re-indented.
+    //
+    // *Inline* HTML does not suspend anything: the tags are raw but the text
+    // around and between them was parsed and arrives as ordinary text nodes,
+    // which this loop already collects. So only the tag itself is here.
     if (type === "html_block" || type === "html_inline") {
-      node.literal.split(/<[^>]*>/).forEach(function (piece) {
-        piece.split("\n").forEach(function (l) {
-          if (l.trim()) out.push({ type: type, literal: l.trim() });
-        });
+      node.literal.split("\n").forEach(function (l) {
+        if (l.trim()) out.push({ type: type, literal: l.trim() });
       });
       continue;
     }

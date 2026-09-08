@@ -28,7 +28,6 @@ if (typeof renderOrg === "undefined") { var renderOrg = require("./org-render.js
 if (typeof codeSpan === "undefined") {
   var __esc = require("./org-escape.js");
   var codeSpan = __esc.codeSpan,
-      escapeLinkDesc = __esc.escapeLinkDesc,
       escapeLinkPath = __esc.escapeLinkPath,
       protectBlockBody = __esc.protectBlockBody,
       escapeCell = __esc.escapeCell;
@@ -45,7 +44,6 @@ function md2org(src) {
 
   var escapes = {
     codeSpan: codeSpan,
-    escapeLinkDesc: escapeLinkDesc,
     escapeLinkPath: escapeLinkPath,
     protectBlockBody: protectBlockBody,
     escapeCell: escapeCell

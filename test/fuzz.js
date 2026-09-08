@@ -153,21 +153,15 @@ const ACCEPTED = [
  * Each is checked at `npm run fuzz` depth for staleness, exactly as ACCEPTED is.
  */
 const KNOWN_OPEN = [
-  { re: /^Org entity inside verbatim\/code at offset N: /,
-    why: "an entity md2org generated, inside a verbatim span the author's own " +
-         "'=' or '~' formed around it; Org does not expand entities there",
-    closedBy: "DESIGN.md: md2org generates no Org entities" },
-
-  { re: /^invariant 4: \d+ headline\(s\) appeared from nowhere/,
-    why: "a multi-line setext heading emits its continuation lines at column 0, " +
-         "outside the headline, so the heading text is truncated and the rest " +
-         "becomes body; when a continuation starts '** ' it becomes a second " +
-         "headline. Minimal case: \"foo\\nbar\\n===\" -> \"* foo\\nbar\". An Org " +
-         "headline is one line, so a soft break inside heading content has to " +
-         "become a space — which is what pandoc does: CommonMark #81 gives " +
-         "\"* Foo /bar baz/\" there against md2org's \"* Foo /bar\\nbaz/\". " +
-         "Confirmed present in 1.0.1, i.e. not introduced by this change",
-    closedBy: "unfixed — found by this tier, needs a decision" }
+  // Empty, and that is the state to keep it in. Both entries it held are closed:
+  // the entity-inside-verbatim class went when md2org stopped generating
+  // entities, and the multi-line setext heading is fixed — a soft break inside
+  // heading content now folds to a space, as pandoc does.
+  //
+  // An entry here is a debt, not a decision. ACCEPTED above is where the design
+  // looked at a failure and chose not to fix it; this list is where a real defect
+  // waits for someone. Keeping them apart is what stops a consequence being
+  // absorbed alongside a decision and quietly ceasing to be work outstanding.
 ];
 
 const accepted = key => ACCEPTED.some(re => re.test(key));

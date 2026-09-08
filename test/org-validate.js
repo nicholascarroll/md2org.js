@@ -113,14 +113,13 @@ function checkInline(org) {
   // Entities are not expanded inside verbatim or code (§Text Markup: CONTENTS is
   // a string), so an entity there is displayed literally and is almost always a
   // conversion bug rather than an intention.
-  // Org-syntax §Text Markup: CONTENTS may neither begin nor end with whitespace,
-  // so "= x =" is not verbatim and an entity inside it expands normally. Without
-  // that rule this reported leaks a real Org export does not produce.
-  const entInVerbatim = /([=~])(?!\s)[^=~\n]*\\[a-zA-Z]+\{\}[^=~\n]*(?<!\s)\1/g;
+  // An Org entity inside a verbatim or code span used to be checkable here: Org
+  // does not expand entities inside one (§Text Markup makes CONTENTS a literal
+  // string), so a generated "\\vert{}" or "\\zwnj{}" captured by an author's own
+  // "=" or "~" was printed in the reader's face. md2org now generates no entities
+  // at all, so any "\\name{}" in the output is the author's own text — this file
+  // cannot tell the difference, and there is no longer a difference to tell.
   let em;
-  while ((em = entInVerbatim.exec(org)) !== null) {
-    problems.push("Org entity inside verbatim/code at offset " + em.index + ": " + JSON.stringify(em[0].slice(0, 40)));
-  }
 
   // There was a third check here: that a bracket link md2org generated always
   // closes. It has gone the same way as the two above. Under the pass-through

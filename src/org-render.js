@@ -56,6 +56,11 @@ function renderOrg(ast, esc) {
   var inFnDef = false;
   var quoteDepth = 0;       // inside a quote block
   var boldHeading = 0;      // current heading is being written as bold text
+  var inHeading = 0;        // inside a heading node
+  var authored = false;     // this line carries text the author wrote
+  var authoredLine = "";    // just the authored part of it
+  var declaredHeadline = false;  // md2org emitted a headline on this line, on purpose
+  var descStart = -1;       // index in the current line where the description begins
   function warnAt(k) {
     var a = renderOrg.warn[k] || (renderOrg.warn[k] = []), n = out.length + 1;
     if (a[a.length - 1] !== n) a.push(n);
@@ -63,11 +68,10 @@ function renderOrg(ast, esc) {
 
   function pad() { return indent.join(""); }
 
-  // An entity is the only thing md2org ever puts in the document that the author
-  // did not write, so DESIGN.md invariant 4 requires it be reported. Detected by
-  // comparing an escape's input with its output rather than by scanning the
-  // finished line: an author may write "\\vert{}" in their Markdown, and under the
-  // pass-through contract that arrives verbatim and is not ours to claim.
+  // DESIGN.md invariant 4: source text that changes how Org parses the document
+  // is reported. Detected by comparing an escape's input with its output rather
+  // than by scanning the finished line, so an author who writes the same
+  // characters in their Markdown is not blamed for them.
   function ent(before, after, name) {
     if (before !== after) warnAt(name);
     return after;
@@ -83,7 +87,35 @@ function renderOrg(ast, esc) {
     // alone - the contract leaves non-Markdown alone - but recorded, because it
     // is the one pass-through construct that re-parents the document. Output line
     // numbers, so they are true for the file the reader is holding.
-    if (inPara && !pad() && /^\*+\s/.test(line)) warnAt("heading");
+    //
+    // Unconditional on the line, with one exemption: a headline md2org declared.
+    //
+    // The question is not who wrote the asterisks, it is what Org will do with the
+    // line, and only the line can answer that. Every attempt to infer authorship
+    // instead got it wrong in one direction or the other. "inPara && !pad()" stood
+    // in for "starts at column 0" and missed a line emitted from inside a footnote
+    // definition, where the indent is consumed and the paragraph flag says nothing
+    // useful. Testing the authored text for the pattern blamed md2org for a setext
+    // heading whose first words are bold. Testing the column where authored text
+    // begins missed "__** * **__", where the leading asterisks are emphasis markup
+    // md2org generated — nobody wrote them and Org still reads a headline.
+    //
+    // So everything that reads as a headline is a finding unless md2org said
+    // otherwise at the moment it emitted one, which is the only place the answer
+    // is known for certain rather than reconstructed.
+    if (!declaredHeadline && /^\*+\s/.test(line)) warnAt("heading");
+    // A delimiter the author wrote, not one md2org emitted. It pairs with one
+    // md2org did emit, opening or closing a block that was never meant to be
+    // there. Only reachable from authored text: a block body is comma-quoted on
+    // the way out, so a delimiter inside one no longer starts the line.
+    if (authored && /^[ \t]*#\+(BEGIN|END)_/i.test(line)) warnAt("stray block delimiter");
+    // Org reads "[[…]]" as a link the Markdown never declared. Tested against the
+    // authored text alone, because every link md2org emits is "[[…][…]]" and would
+    // otherwise match.
+    if (/\[\[[^\]]*\]\]/.test(authoredLine)) warnAt("[[ ]] read as an Org link");
+    authored = false;
+    authoredLine = "";
+    declaredHeadline = false;
     out.push(line);
     line = "";
     atLineStart = true;
@@ -113,18 +145,26 @@ function renderOrg(ast, esc) {
   // by the contract it is not ours to touch — see DESIGN.md. Text nodes are the
   // leaves of the tree, and re-serialising a tree copies its leaves.
   function text(s) {
-    var t = inCell ? ent(s, esc.escapeCell(s), "\\vert{}") : s;
-    // Not the author's text being neutralised - the link wrapper is ours.
-    if (linkDepth > 0) t = ent(t, esc.escapeLinkDesc(t, line.slice(-1)), "\\zwnj{}");
+    var t = inCell ? ent(s, esc.escapeCell(s), "\\| in a table cell") : s;
+    // Accumulated rather than tested per node: a backslash escape becomes its own
+    // text node, so "[a\\]\\]b](/u)" reaches here as "a", "]", "]", "b" and no
+    // single node ever holds the "]]" that does the damage.
+    authored = true;
+    authoredLine += t;
     push(t);
   }
 
-  // Close a bracket link. A description ending in "]" would form "]]" against the
-  // closer and end the link one character early, so the pair is separated by a
-  // zero-width non-joiner. escapeLinkDesc cannot catch this: the collision only
-  // exists once the closer is appended.
+  // Close a bracket link. A description ending in "]" forms "]]" against the
+  // closer and ends the link one character early. Nothing can be inserted to stop
+  // it without generating an entity, so it is reported like any other "]]".
   function closeLink() {
-    if (line.slice(-1) === "]") { push("\\zwnj{}"); ent(0, 1, "\\zwnj{}"); }
+    var desc = descStart >= 0 ? line.slice(descStart) : "";
+    // Either the description already holds "]]", or it ends in "]" and forms one
+    // against the closer. Same outcome: the link ends early and the remainder of
+    // the description is left in the document as text.
+    if (desc.indexOf("]]") !== -1 || desc.slice(-1) === "]")
+      warnAt("]] in a link description");
+    descStart = -1;
     push("]]");
   }
 
@@ -182,6 +222,13 @@ function renderOrg(ast, esc) {
         // A definition is one line: Org ends it at a blank line, and a body
         // spread over several would swallow whatever followed.
         if (inFnDef) { push(" "); break; }
+        // So is a headline (§Headings: a headline is a single line). CommonMark
+        // allows a setext heading to span several — "foo\nbar\n===" is one h1 —
+        // and emitting the break would drop every line after the first out of the
+        // headline, truncating the heading and leaving the rest as body text. A
+        // continuation beginning "** " became a second headline outright. Folded
+        // to a space, which is what pandoc does with the same input.
+        if (inHeading) { push(" "); break; }
         endLine();
         push(pad());
         atLineStart = true;
@@ -202,20 +249,19 @@ function renderOrg(ast, esc) {
         // Dropping the monospace and keeping the characters right is the same
         // resolution as a span holding both "=" and "~".
         //
-        // Two wrappers can be broken. A table cell ends at a bare "|". A link
-        // description ends at "]]" — and that one used to escape the guard
-        // entirely, because escapeLinkDesc is applied to text nodes and a code
-        // span is not a text node, so a description holding a code span with "]]"
-        // in it emitted a link that Org closed early, mid-description.
+        // A cell ends at a bare "|", and a backslash cannot go inside the
+        // delimiters: §Text Markup makes CONTENTS a literal string, so "\\|" there
+        // would be shown as written. The span loses its monospace and keeps its
+        // characters, the same resolution as one holding both "=" and "~".
+        //
+        // "]]" in a span inside a link description needs no handling of its own
+        // any more: it is passed through and reported like any other "]]", so the
+        // monospace survives.
         var lit = node.literal;
-        var breaksCell = inCell && lit.indexOf("|") !== -1;
-        var breaksLink = linkDepth > 0 && lit.indexOf("]]") !== -1;
-        if (breaksCell || breaksLink) {
-          var bare = breaksCell ? ent(lit, esc.escapeCell(lit), "\\vert{}") : lit;
-          // Inside a description the unwrapped text is now ordinary description
-          // content, so it takes the same escaping every other text node takes.
-          if (linkDepth > 0) bare = ent(bare, esc.escapeLinkDesc(bare, line.slice(-1)), "\\zwnj{}");
-          push(bare);
+        authored = true;
+        authoredLine += lit;
+        if (inCell && lit.indexOf("|") !== -1) {
+          push(ent(lit, esc.escapeCell(lit), "\\| in a table cell"));
         } else {
           push(esc.codeSpan(lit));
         }
@@ -327,6 +373,7 @@ function renderOrg(ast, esc) {
             bareDesc++;
           } else {
             push("[[" + esc.escapeLinkPath(node.destination) + "][");
+            if (linkDepth === 0) descStart = line.length;
           }
           linkDepth++;
         } else {
@@ -379,6 +426,7 @@ function renderOrg(ast, esc) {
 
       case "heading":
         if (ev.entering) {
+          inHeading++;
           // A heading is an *unindented* line and is context-free (§Headings), so
           // it is recognised inside a quote block or a list item just as it is at
           // top level -- it ends the enclosing section, leaves the block unclosed
@@ -394,12 +442,14 @@ function renderOrg(ast, esc) {
             flush();
             spaceBefore(node);
             push("*".repeat(node.level) + " ");
+            declaredHeadline = true;
           }
         } else {
           if (boldHeading) {
             // An empty heading would leave "**": neither markup nor text.
             if (line.slice(-1) === "*") line = line.slice(0, -1); else push("*");
           }
+          inHeading--;
           endLine();
           noteEnd(node);
         }

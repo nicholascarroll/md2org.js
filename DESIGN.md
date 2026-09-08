@@ -1,8 +1,6 @@
 # Design
 
-1. md2org converts Markdown markup to Org markup. Raw HTML in a Markdown
-   document is markup for this purpose: its tags may be rewrapped or folded, but
-   the text between them is content.
+1. md2org converts Markdown markup to Org markup.
 2. Some Markdown markup is converted only in part, or not at all.
 3. Source text that isn't Markdown markup passes through unchanged.
 
@@ -20,8 +18,6 @@ graph LR
    table row that splits, a block that opens or closes — it is reported in the
    Warnings Footer.
 5. Table cell content is never processed as headings or lists.
-6. An `#+BEGIN_EXPORT html` block contains only HTML. Text between tags stays
-   outside it.
 
 Invariant 4 is about the parse and nothing else. Syntax that Org parses exactly
 as intended, and then exports oddly or not at all, is a different class with a
@@ -29,18 +25,32 @@ different remedy: it is documented rather than warned, under *Survives the parse
 not the export* below. Mixing the two would put a warning on every `$x$` in the
 document and drown the structural ones that matter.
 
-Invariant 6 exists because invariant 1 did not cover the case. A CommonMark HTML
-block runs from the opening tag to the next blank line and carries whatever is in
-between, tags and prose alike. HTML renders all of it, so passing the region
-through whole is lossless there. An Org export block is not a pass-through, it is
-a discard boundary: everything in it is dropped for every backend but HTML. Put
-the region in one and a sentence between two tags is deleted. Invariant 1 held
-the whole time, because the words were still in the file — they just never
-reached a reader.
+## Raw HTML
 
-The exception is a raw-text element: `<pre>`, `<script>`, `<style>`, `<textarea>`.
-Their contents are data, not prose, and whitespace in them is significant, so the
-element goes in the block whole.
+Markdown has allowed HTML since Gruber's original spec, and CommonMark gives the
+two forms different rules. md2org follows the parser rather than second-guessing
+it, because the parser has already decided which of them the author wrote.
+
+**Inline HTML is transparent.** In `See <b>**bold** and \`code\`</b> here.` the tags
+are raw but nothing else is: the text around and between them was parsed, and
+`**bold**` and `` `code` `` arrive as a strong node and a code span, siblings of
+the tags rather than their contents. So they convert normally and each tag becomes
+its own `@@html:…@@` snippet. The correspondence is exact in both directions —
+Org's snippet is self-contained too, not an opening and closing pair.
+
+**A block is opaque.** CommonMark suspends parsing for the whole region and the
+literal is the region entire, tags and prose alike. There is no Markdown inside it
+to convert, so it passes through whole into `#+BEGIN_EXPORT html`, which is Org's
+construct for exactly this: content addressed to the HTML backend. A LaTeX or
+ASCII export dropping it is not a loss — nothing in there was ever addressed to
+them. Comma-quoting keeps a line inside the region from closing the block early,
+and works because the content stays inside a block, which is the only place Org
+honours it.
+
+The blank-line rule is what separates the two, and it is a fair proxy for intent:
+an author who wants Markdown parsed inside their `<details>` leaves a blank line,
+and one who has stopped writing Markdown and started writing a chunk of layout
+does not.
 
 ## Starting point: GitHub Flavoured Markdown (GFM)
 
@@ -65,6 +75,12 @@ md2org generates no Org entities. There is no `\vert{}`, no `\zwnj{}`, no
 `\name{}`. The output contains only characters the author wrote, plus the Org
 markup md2org emits for the constructs it converts.
 
+This is not only tidiness. Both entities md2org used to generate could be captured
+by an author's own `=` or `~`, and Org does not expand an entity inside a verbatim
+span — §Text Markup makes CONTENTS a literal string — so the escape that was
+supposed to be invisible was printed to the reader instead. An escape that can be
+captured by the text it sits in is not an escape.
+
 ### Pass through, with a warning
 
 Passed through untouched, and listed in the Warnings Footer, because Org parses
@@ -73,14 +89,27 @@ the result differently from the way the source read. This list is invariant 4.
 | Source text | What Org does with it |
 |---|---|
 | `]]` inside a link description | the link ends early and the rest becomes text |
-| `** text` at line start | a heading appears, claiming everything until the next heading of equal or lower level |
+| a line Org reads as a headline | a heading appears, claiming everything until the next heading of equal or lower level |
 | `\|` in a table cell | Org has no escape for a cell, so the cell splits and the backslash stays in the output |
 | `#+BEGIN_…` or `#+END_…` on its own line | pairs with a delimiter md2org emitted, opening or closing a block |
 | `[[Some Page]]` | read as an Org link |
 
-A level-1 heading cannot arise. A single `*` and a space is always a Markdown
-bullet, and the one other route to column 0 — text carried out of an HTML region
-under invariant 6 — is comma-quoted on the way out.
+The headline row is stated as an outcome rather than a construct, because more
+than one route reaches it and naming them was how the check kept going wrong.
+`** text` in prose is the obvious one. A line inside a block quote is another. So
+is `__** * **__`, where Org's strong-emphasis marker is an asterisk and md2org's
+own conversion puts three of them at the start of a line — nobody wrote those and
+Org still reads a headline.
+
+So the test is on the finished line and admits one exemption: a headline md2org
+declared at the moment it emitted one, which is the only point where the answer is
+known rather than reconstructed. Everything else that reads as a headline is
+reported.
+
+A level-1 heading still cannot arise. A single `*` and a space is always a
+Markdown bullet, CommonMark forbids an emphasis opener followed by whitespace so a
+converted `__…__` never yields `* `, and an asterisk inside an HTML block never
+leaves the block.
 
 ### Lossy conversion
 

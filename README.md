@@ -54,11 +54,13 @@ If you see this:
 
 ```
 # md2org warnings:
-# \vert{}: line 3
+# \| in a table cell: line 3
 ```
-It is because in the source Markdown you had `\|` in a table cell and that has been substituted for `\vert{}`, which is the Org entity that represents `|`.
+It is because the source Markdown had `\|` in a table cell. Org gives a table cell no escape syntax at all — not even a backslash, which it leaves in the field as a literal character while still splitting on the pipe — so nothing md2org could emit would make that row come out right. Your `\|` is passed through exactly as you wrote it, the row splits, and the warning tells you where to look.
 
-If the source Markdown contains a hyperlink with `]]` in the link description, md2org will replace that with `]\zwnj{}]` and show it in the Warnings Footer. The Org entity `\zwnj{}` is the Zero Width Non-joiner Unicode character.  The `\zwnj{}` is invisible, so `]\zwnj{}]` reads as `]]` in HTML, ASCII or LaTeX Emacs export formats.  Emacs' `org-pretty-entities` controls display of these in editor.
+`]]` in a link description is the same story. Org has no escape for it either, so the link ends at the `]]` and the rest of the description is left in the document as text. Every character survives; the link does not. You get `# ]] in a link description` in the footer.
+
+Both were handled with Org entities before 1.1.0 — `\vert{}` and `\zwnj{}` — which worked until one landed inside a `=verbatim=` or `~code~` span you had written yourself. Org does not expand entities in there, so instead of an invisible separator you got a literal `\zwnj{}` in your exported document. md2org now generates no entities at all.
 
 
 ## Known lossy conversions
@@ -68,11 +70,11 @@ If the source Markdown contains a hyperlink with `]]` in the link description, m
 - `+ item` becomes `- item` and `_em_` becomes `/em/`. 
 - Raw HTML. Blocks become `#+BEGIN_EXPORT html`
 - inline HTML becomes  `@@html:…@@`. 
-- Obscure named entities such as `&HilbertSpace;` pass through as text.
+- Named entities such as `&mdash;` and `&HilbertSpace;` pass through as you wrote them. Numeric references such as `&#65;` still resolve.
 
 ## Correctness
 
-md2org.js forks and modifies the reference [CommonMark](https://spec.commonmark.org/0.31.2/) parser, and passes 651 of the specification's 652 test cases. 
+md2org.js forks and modifies the reference [CommonMark](https://spec.commonmark.org/0.31.2/) parser, and passes 645 of the specification's 652 test cases. 
 
 Tables and footnotes are [GitHub Flavoured Markdown](specs/gfm-spec-0.29.txt) extensions that CommonMark doesn't define.
 
@@ -87,7 +89,7 @@ The cases below are all tested:
 | a language-tagged fence containing `#+END_SRC` | block ends early, rest of the file is body text | `,#+END_SRC` (comma-quoted) |
 | `` `a=b` `` | verbatim ending at the first `=` | falls back to `~a=b~` |
 | `]` in a link path | the link ends early | percent-encoded by the parser |
-| `]]` in a link description | the link ends early | broken with `\zwnj{}` |
+| `]]` in a link description | the link ends early | passed through and warned |
 
 ### Testing
 
@@ -102,7 +104,7 @@ npm test
   valid Org, and that the browser and Shortcut copies convert identically to
   `src/`.
 - **`test/cli.js`** — the CLI contract, tests `bin/md2org` in the shell.
-- **`test/conformance.js`** — CommonMark conformance, 651/652, measured against
+- **`test/conformance.js`** — CommonMark conformance, 645/652, measured against
   the spec's own Markdown/HTML pairs run as data.
 - **`test/gfm.js`** — GFM table conformance, 8/8, against the GFM spec's examples.
 - **`test/fuzz.js`** — generates 5,000 documents from a fragment corpus and

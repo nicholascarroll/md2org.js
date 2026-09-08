@@ -44,28 +44,25 @@ function codeSpan(text) {
 }
 
 /*
- * Link descriptions. §Regular Link: a description may not contain "]]", which
- * would close the link early. This is not the escaping the contract forbids -
- * nothing here is the author's literal text being altered so Org will render it
- * a particular way. It is markup md2org *generates* breaking on the content it
- * wraps, and Org gives a description no escape syntax, so the pair is separated
- * by a zero-width non-joiner. The only one left in the program.
- */
-function escapeLinkDesc(desc, prevChar) {
-  var d = String(desc).replace(/\]\]/g, "]\\zwnj{}]");
-  if (d[0] === "]" && prevChar === "]") d = "\\zwnj{}" + d;
-  return d;
-}
-
-/*
  * Table cells. §Table: a bare "|" ends the cell, and Org gives a cell no escape
- * syntax, so the character becomes the \vert{} entity. Like the link wrapper this
- * is markup md2org generates breaking on the content it wraps, not the author's
- * text being altered — GFM makes the author write "\|", so this only ever fires
- * on a pipe that was already escaped in the source.
+ * syntax at all — not even a backslash, which Org leaves in the field as a
+ * literal character while still splitting on the pipe.
+ *
+ * So nothing here can make the table come out right, and md2org does not
+ * pretend otherwise. GFM makes the author write "\|", the parser consumes the
+ * backslash as Markdown escape markup, and this puts it back: what the author
+ * typed is what appears in the output. DESIGN.md lists the construct under
+ * "Pass through, with a warning" for exactly this reason — the table breaks, the
+ * characters survive, and the footer says so.
+ *
+ * This is the last of md2org's escapes to go. The \vert{} entity that used to
+ * live here, and the \zwnj{} that separated "]]" in a link description, were
+ * both markup md2org generated to protect markup md2org generated, and both
+ * could be captured by an author's own "=" or "~" and printed in the reader's
+ * face. md2org now generates no Org entities at all.
  */
 function escapeCell(text) {
-  return String(text).replace(/\|/g, "\\vert{}");
+  return String(text).replace(/\|/g, "\\|");
 }
 
 /*
@@ -98,5 +95,4 @@ function escapeLinkPath(path) {
 /* --8<-- core end */
 
 module.exports = { protectBlockBody: protectBlockBody, codeSpan: codeSpan,
-                   escapeLinkDesc: escapeLinkDesc, escapeLinkPath: escapeLinkPath,
-                   escapeCell: escapeCell };
+                   escapeLinkPath: escapeLinkPath, escapeCell: escapeCell };

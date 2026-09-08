@@ -149,8 +149,7 @@ if (require.main !== module) return;
 const TABLE = [
   { name: "]] inside a link description",
     md: "[a\\]\\]b](/u)",
-    key: "\\zwnj{}",
-    target: "]] in a link description" },
+    key: "]] in a link description" },
 
   { name: "** at line start becomes a heading",
     md: "text\n\n** looks like org",
@@ -158,18 +157,19 @@ const TABLE = [
 
   { name: "escaped pipe in a table cell",
     md: "| a |\n| --- |\n| x \\| y |",
-    key: "\\vert{}",
-    target: "\\| in a table cell" },
+    key: "\\| in a table cell" },
 
   { name: "stray block delimiter",
     md: "para\n\n#+END_SRC",
-    key: null,
-    target: "stray block delimiter" },
+    key: "stray block delimiter" },
 
   { name: "[[Some Page]] read as an Org link",
     md: "see [[Some Page]] here",
-    key: null,
-    target: "[[ ]] read as an Org link" }
+    key: "[[ ]] read as an Org link" },
+
+  { name: "a link description ending in ]",
+    md: "[a\\]](/u)",
+    key: "]] in a link description" }
 ];
 
 /*

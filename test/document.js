@@ -29,14 +29,12 @@
  * in test/fuzz.js: this tier is for scale and interaction, not for hostility,
  * and treating a green run here as broad assurance would be a mistake.
  *
- * The entity-inside-verbatim check is excluded rather than asserted. Under the
- * contract an author may write "\vert{}" inside a code span — this repository's
- * own documentation does, while documenting the feature — and nothing in the
- * output distinguishes that from an entity md2org generated. Asserting it here
- * would fail on correct documentation, so it is reported as a count and not
- * failed on. It stops being a special case when md2org stops generating
- * entities, at which point any such finding is the author's own text and the
- * check can go. Everything else is a hard failure.
+ * Every finding is a hard failure. There used to be an exclusion here for an Org
+ * entity inside a verbatim span, because an author may write "\vert{}" in a code
+ * span — this repository's own documentation did, while documenting the feature —
+ * and nothing in the output distinguished that from one md2org generated. md2org
+ * generates no entities now, so the check itself is gone from
+ * test/org-validate.js and the exclusion went with it.
  */
 "use strict";
 
@@ -77,11 +75,7 @@ function syntheticDocument(copies) {
   return parts.join("\n\n") + "\n";
 }
 
-// A problem class the contract cannot judge — see the header.
-const UNJUDGEABLE = /^Org entity inside verbatim\/code/;
-
 let failed = 0;
-let excluded = 0;
 
 function check(name, src) {
   let out;
@@ -99,8 +93,7 @@ function check(name, src) {
   const problems = validate(out)
     .concat(invariant1(src, out))
     .concat(heading ? ["invariant 4: " + heading] : []);
-  const hard = problems.filter(p => !UNJUDGEABLE.test(p));
-  excluded += problems.length - hard.length;
+  const hard = problems;
 
   const size = (src.length / 1024).toFixed(1) + " KB";
 
@@ -143,11 +136,6 @@ check("all docs concatenated", DOCS
   .filter(f => fs.existsSync(f))
   .map(f => fs.readFileSync(f, "utf8"))
   .join("\n\n"));
-
-if (excluded) {
-  console.log("  note " + excluded + " entity-in-verbatim finding" +
-              (excluded > 1 ? "s" : "") + " not judged — see the header");
-}
 
 console.log("");
 console.log(failed ? "  " + failed + " failed" : "  all document-scale inputs valid");

@@ -7,10 +7,62 @@
 
 
 ### Changed
+
+
+### Fixed
+
+
+## [1.1.0] — 2026-09-08
+
+### Added
+- Named HTML entities such as `&mdash;` now pass through as the author wrote
+  them. Numeric references such as `&#65;` still resolve.
+- Warnings Footer covers four more constructs that Org parses differently from
+  the way the source reads: `]]` in a link description, `\|` in a table cell, a
+  stray `#+BEGIN_`/`#+END_` line, and `[[Some Page]]`.
+- `test/warnings.js` — the first tier to test DESIGN.md invariant 4. Asserts a
+  warning for every construct in the warned table, and accounts for every
+  headline in the output against the headings in the source, so one that appears
+  by an unforeseen route fails without anyone having predicted the route.
+- `test/invariant.js` — invariant 1 as a property test, run by the fuzzer on
+  every document it generates rather than on a fixture list.
+- `test/document.js` — document-scale inputs, the repository's own Markdown.
+- Document-scale export checks in `test/emacs.js`, which now runs as part of
+  `npm test` and is skipped when Emacs is absent. CI installs it.
+
+### Changed
 - Warnings Footer now reports per warning category.
+- md2org generates no Org entities. `\vert{}` and `\zwnj{}` are gone: each was
+  markup generated to protect markup generated, and each could be captured by an
+  author's own `=` or `~`, at which point Org printed it to the reader instead of
+  expanding it. Both constructs now pass through and are warned.
+- A code span holding `]]` in a link description keeps its monospace. It only
+  ever lost it so the escape could be applied outside the delimiters.
+- CommonMark conformance is 645/652, from 651/652. All seven exceptions are the
+  same decision: named entity references are not decoded.
+- The fuzzer generates nested documents, so a construct can appear inside
+  another. The previous generator could not express the shape the 1.0.1 `]]`
+  defect lived in.
+- `ACCEPTED` in `test/fuzz.js` is split from a new `KNOWN_OPEN`. The first is a
+  decision the design made; the second is a defect nobody has decided anything
+  about. `KNOWN_OPEN` is currently empty.
 
 ### Fixed
 - #1 `[Foo](#foo)` used to produce a link and now produces plain text.
+- A multi-line setext heading dropped every line after the first out of the
+  headline, truncating the heading and leaving the rest as body text; a
+  continuation beginning `** ` became a second headline that claimed the
+  following sections. A soft break inside heading content now folds to a space,
+  as pandoc does. Present since before 1.0.1 and found by `test/warnings.js`.
+- The `heading` warning missed several routes to a headline: a line emitted from
+  inside a footnote definition, a line inside a block quote, and a line whose
+  leading asterisks are strong-emphasis markup md2org generated itself, as in
+  `__** * **__`. It now tests the finished line and exempts only a headline
+  md2org declared, rather than inferring authorship after the fact. Found by
+  `test/warnings.js` at fuzz depth.
+- `test/org-validate.js` honoured neither half of Org's rule that verbatim
+  contents may not begin or end with whitespace, so `= x =` was reported as a
+  verbatim span when Org does not read it as one.
 
 
 ## [1.0.1] — 2026-09-06

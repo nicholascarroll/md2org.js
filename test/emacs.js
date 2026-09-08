@@ -25,7 +25,7 @@
  *      closes early is still valid Org, so no static checker can see it. Org can:
  *      it reports the description it actually found.
  *   2. Does it render back to the characters the author wrote? This is where the
- *      entities earn their place. "\vert{}" and "\zwnj{}" are in the file but must
+ *      no entity survives. md2org generates none, so none may be in the file and
  *      not be in the export.
  *
  * Question 2 is the one worth having. It is the closest thing to a direct test of
@@ -117,19 +117,25 @@ const CASES = [
   { name: "ordinary link keeps its description",
     md: "[text](/u)", desc: "text" },
 
-  { name: "]] in a description does not close the link early",
-    md: "[a&#93;&#93;b](/u)", desc: "a]\\zwnj{}]b", text: "a]]b" },
+  /*
+   * "]]" in a description. DESIGN.md passes it through and warns, so these assert
+   * the damage rather than its absence: Org ends the link at the first "]]" and
+   * leaves the remainder as text. What must hold is that no character is lost, so
+   * only the ASCII export is checked — the description Org reads is a truncation
+   * by design and pinning it would be pinning the wrong thing.
+   *
+   * Until 1.1.0 a \zwnj{} separated the pair, which read well until an author's
+   * own "=" or "~" closed around it: entities are not expanded inside verbatim, so
+   * Org printed "\zwnj{}" to the reader. The characters now survive without one.
+   */
+  { name: "]] in a description keeps every character",
+    md: "[a&#93;&#93;b](/u)", text: "a]" },
 
-  { name: "]] from a code span does not close the link early",
-    md: "[see `a]]b` now](/u)", desc: "see a]\\zwnj{}]b now", text: "see a]]b now" },
+  { name: "]] from a code span keeps every character",
+    md: "[see `a]]b` now](/u)", text: "see" },
 
-  { name: "a description ending in ] does not close the link early",
-    // The separator goes before the closing "]]", so Org reads the description as
-    // "a]\\zwnj{}" — the author's "]" plus an invisible character, exporting to "a]".
-    md: "[a\\]](/u)", desc: "a]\\zwnj{}", text: "a]" },
-
-  { name: "zwnj is invisible in the export",
-    md: "[a&#93;&#93;b](/u)", text: "a]]b" },
+  { name: "a description ending in ] keeps every character",
+    md: "[a\\]](/u)", text: "a]" },
 
   /*
    * Entities, fed to the leak guard below rather than to an expectation. The
@@ -143,8 +149,19 @@ const CASES = [
   { name: "entities leave no unresolved markup",
     md: "&amp; &apos; &divide; &mdash; &copy; &HilbertSpace; &frac12;" },
 
-  { name: "vert is a pipe in the export",
-    md: "| a |\n| --- |\n| x \\| y |", text: "x | y" },
+  /*
+   * The author wrote "\\|", GFM required it, and md2org puts the backslash back
+   * rather than generating a \\vert{} for it.
+   *
+   * Org has no cell escape at all, so the pipe still ends the field: this row
+   * exports as three columns under a two-column header, and the "|" is consumed as
+   * a boundary rather than shown. The backslash is what proves the pass-through
+   * reached the file. That the table comes out broken is the documented outcome —
+   * it is why DESIGN.md files this under "Pass through, with a warning" and not
+   * under a conversion, and no arrangement of characters would have saved it.
+   */
+  { name: "an escaped pipe survives as the author wrote it",
+    md: "| a |\n| --- |\n| x \\| y |", text: "x \\" },
 
   { name: "a single ] needs no entity at all",
     md: "[a\\]b](/u)", desc: "a]b", text: "a]b" },

@@ -6,19 +6,26 @@
  * This checks the parse half only, against the spec's own HTML, so nothing here is
  * an authored expectation. The Org half is checked by test/spec.js.
  *
- * Expected result is 651/652. The one exception is example 25, which tests obscure
- * named entities (&HilbertSpace;, &ClockwiseContourIntegral;). The forked parser
- * carries a compact entity table instead of the full 99 KB one, which is what keeps
- * the Shortcut copy small enough to paste. That trade is deliberate and asserted
- * here so it can't drift silently into something larger.
+ * Expected result is 645/652, and the seven exceptions are all the same decision:
+ * named entity references are not decoded. DESIGN.md passes them through as the
+ * author wrote them, so the parser has no named table at all — upstream's is 99 KB,
+ * about two thirds of the whole bundle, and carrying it would put the Shortcut copy
+ * far past what its code field will accept.
+ *
+ * Example 25 is the direct test of named entities. The other six use one somewhere
+ * the spec expects it resolved before the surrounding construct is built: in a link
+ * destination, a link title, a link reference definition, or a code fence's info
+ * string. Nothing there is a parse defect — the parser is doing exactly what the
+ * contract asks — but the count is asserted so the trade cannot drift silently into
+ * something larger.
  */
 const fs = require("fs");
 const vm = require("vm");
 const path = require("path");
 const extract = require("./extract.js");
 
-const EXPECTED_PASS = 651;
-const EXPECTED_FAILURES = [25];
+const EXPECTED_PASS = 645;
+const EXPECTED_FAILURES = [25, 32, 33, 34, 41, 503, 506];
 
 const ctx = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname, "vendor-cmark-html.js"), "utf8"), ctx);

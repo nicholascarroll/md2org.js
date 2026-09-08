@@ -9,6 +9,8 @@
  */
 const md2org = require("../src/md2org.js");
 
+const WARN_DESC = "\n\n# md2org warnings:\n# ]] in a link description: line 1";
+
 let pass = 0, fail = 0;
 /*
  * Every behavioural case is run twice: once against src/, and once against the
@@ -282,23 +284,29 @@ check("image inside link text alongside words",
 // §Regular Link: a description may contain square brackets but not "]]". A "]"
 // ending the description forms one against the closer, and CommonMark splits
 // "\]\]" into separate text nodes so the pair can straddle a node boundary.
-// Before this was guarded, Org ended the description one character early and the
-// bracket fell outside the link — valid Org, so org-validate.js did not catch it.
-check("description ending in ] does not close the link early",
+//
+// Passed through and reported, per DESIGN.md. The link ends early and the rest of
+// the description is left in the document as text: every character survives, the
+// link does not. The alternative was separating the pair with a \zwnj{} entity,
+// which produced a correct link right up until an author's own "=" or "~" closed
+// around it, at which point Org printed "\zwnj{}" in the reader's face — entities
+// are not expanded inside verbatim (§Text Markup: CONTENTS is a string). md2org
+// now generates no entities at all, so the escape had nowhere left to live.
+check("description ending in ] passes through and warns",
   "[a\\]](/u)",
-  "[[/u][a]\\zwnj{}]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
-check("]] split across text nodes is guarded",
+  "[[/u][a]]]" + WARN_DESC);
+check("]] split across text nodes passes through and warns",
   "[a\\]\\]b](/u)",
-  "[[/u][a]\\zwnj{}]b]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
-// A code span is not a text node, so escapeLinkDesc never saw it and "]]" inside
-// one closed the link mid-description. The span unwraps: monospace lost,
-// characters kept, same resolution as a pipe inside code in a table cell.
-check("]] inside a code span in a description unwraps the span",
+  "[[/u][a]]b]]" + WARN_DESC);
+// A code span keeps its monospace now. It only ever lost it so that the escape
+// could be applied outside the delimiters; with no escape to apply, the span is
+// left alone and the "]]" inside it is reported like any other.
+check("]] inside a code span in a description keeps the span",
   "[see `a]]b` now](/u)",
-  "[[/u][see a]\\zwnj{}]b now]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
-check("]] inside a code span in an image description unwraps too",
+  "[[/u][see =a]]b= now]]" + WARN_DESC);
+check("]] inside a code span in an image description keeps the span too",
   "![alt `]]` t](/i.png)",
-  "[[/i.png][alt ]\\zwnj{}] t]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
+  "[[/i.png][alt =]]= t]]" + WARN_DESC);
 // Only "]]" breaks a description, so a lone "]" keeps its monospace. Unwrapping
 // more than necessary would lose formatting the author asked for.
 check("a single ] in a code span keeps its monospace",
@@ -313,12 +321,12 @@ check("]] in a code span in a table cell keeps its monospace",
 check("a single ] in a description is left alone",
   "[a\\]b](/u)",
   "[[/u][a]b]]");
-check("image alt ending in ] is guarded",
+check("image alt ending in ] passes through and warns",
   "![alt\\]](/i.png)",
-  "[[/i.png][alt]\\zwnj{}]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
-check("autolink ending in ] is guarded",
+  "[[/i.png][alt]]]" + WARN_DESC);
+check("autolink ending in ] passes through and warns",
   "<http://x/ab]>",
-  "[[http://x/ab%5D][http://x/ab]\\zwnj{}]]\n\n# md2org warnings:\n# \\zwnj{}: line 1");
+  "[[http://x/ab%5D][http://x/ab]]]" + WARN_DESC);
 
 check("table rule row is an Org rule, not a data row",
   "| a | b |\n| --- | --- |\n| 1 | 2 |",
@@ -326,15 +334,15 @@ check("table rule row is an Org rule, not a data row",
 check("table alignment becomes a cookie row",
   "| a | b |\n| :-: | ---: |\n| 1 | 2 |",
   "| a | b |\n|----+----|\n| <c> | <r> |\n| 1 | 2 |");
-check("escaped pipe in a plain cell becomes an entity",
+check("escaped pipe in a plain cell passes through and warns",
   "| a |\n| --- |\n| x \\| y |",
-  "| a |\n|----|\n| x \\vert{} y |\n\n# md2org warnings:\n# \\vert{}: line 3");
+  "| a |\n|----|\n| x \\| y |\n\n# md2org warnings:\n# \\| in a table cell: line 3");
 // Entities are not expanded inside verbatim (§Text Markup: CONTENTS is a string),
 // so a pipe inside code in a cell cannot be escaped in place. The span is
 // unwrapped: the text stays correct, only the monospace is lost.
 check("pipe inside code in a cell unwraps the code span",
   "| a |\n| --- |\n| \`Alt-\\|\` |",
-  "| a |\n|----|\n| Alt-\\vert{} |\n\n# md2org warnings:\n# \\vert{}: line 3");
+  "| a |\n|----|\n| Alt-\\| |\n\n# md2org warnings:\n# \\| in a table cell: line 3");
 check("code span without a pipe keeps its markup",
   "| a |\n| --- |\n| \`fmt\` |",
   "| a |\n|----|\n| =fmt= |");
@@ -351,7 +359,7 @@ check("literal [[ passes through as an Org link",
   "a [[ b");
 check("indented keyword passes through too",
   "- item\n\n  #+END_SRC",
-  "- item\n\n  #+END_SRC");
+  "- item\n\n  #+END_SRC\n\n# md2org warnings:\n# stray block delimiter: line 3");
 
 // Footnotes. GFM 0.29 has no footnote example, so these follow GitHub.
 // GitHub only renders a reference as a footnote when a definition exists. Without
@@ -402,7 +410,7 @@ check("indented code block", "    code here", "#+BEGIN_EXAMPLE\ncode here\n#+END
 check("tilde fence", "~~~\ncode\n~~~", "#+BEGIN_EXAMPLE\ncode\n#+END_EXAMPLE");
 check("autolink", "<http://example.com>", "[[http://example.com][http://example.com]]");
 check("hard line break", "foo  \nbar", "foo\\\\\nbar");
-check("entity reference", "&amp; &copy;", "& ©");
+check("named entity references pass through", "&amp; &copy;", "&amp; &copy;");
 check("reference link", "[foo]\n\n[foo]: /url", "[[/url][foo]]");
 check("ordered list start number", "5. five\n6. six", "5. [@5] five\n6. six");
 

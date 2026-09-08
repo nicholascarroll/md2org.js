@@ -225,6 +225,32 @@ for (const row of TABLE) {
   }
 }
 
+/*
+ * The other direction, and nothing checked it before. These are constructs that
+ * read as Org markup but sit where Org parses no markup at all, so a warning
+ * about one is a false report against an invariant scoped to the parse and
+ * nothing else. It costs more than a missing warning does: the footer is the
+ * only place md2org writes words the author did not, and a reader who learns to
+ * skip it loses the true findings with the false. Every case below was confirmed
+ * against Emacs 29.3, which finds no link, no headline and no block in any of
+ * them -- §Text Markup makes the contents of a verbatim span a literal string.
+ */
+const SILENT = [
+  ["[[ ]] inside a code span", "A `[[Some Page]]` literal."],
+  ["[[ ]] inside a fenced block", "```\n[[Some Page]]\n```"],
+  ["a block delimiter inside a code span", "`#+END_SRC` ends a block."],
+  ["a block delimiter inside a fenced block", "```\n#+END_SRC\n```"],
+  ["an asterisk line inside a fenced block", "```\n** not a heading\n```"],
+  ["]] inside a code span", "A `a]]b` literal."],
+  ["a pipe inside a code span outside a table", "A `x|y` literal."]
+];
+
+for (const [name, md] of SILENT) {
+  const got = Object.keys(warnings(md2org(md)));
+  if (got.length === 0) ok("silent: " + name);
+  else bad("silent: " + name, "expected no footer, got " + JSON.stringify(got));
+}
+
 /* A clean document must produce no footer at all. The footer is the only place
  * md2org writes words the author didn't, so a spurious one is its own defect. */
 const quiet = md2org("# Title\n\nSome **bold** text.\n\n- a\n- b\n");

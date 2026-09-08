@@ -10,13 +10,13 @@ graph LR
 ```
 
 ## Invariants
-1. Every non-markup character in the source appears in the output.
-2. Contents of Markdown code blocks are never transformed.
+1. Every non-markup character in the source appears in the output, except the alt
+   text of an image inside a link description, which Org has nowhere to put.
+2. Contents of Markdown code blocks are never transformed, except by Org's own
+   comma-quoting, which Org reverses on read.
 3. Contents of Markdown comments are never transformed.
 4. If any text in the source happens to be valid Org syntax that changes how Org
-   *parses* the document — a link that ends early, a heading that wasn't there, a
-   table row that splits, a block that opens or closes — it is reported in the
-   Warnings Footer.
+   *parses* the document, it is reported in the Warnings Footer.
 5. Table cell content is never processed as headings or lists.
 
 Invariant 4 is about the parse and nothing else. Syntax that Org parses exactly
@@ -51,6 +51,64 @@ The blank-line rule is what separates the two, and it is a fair proxy for intent
 an author who wants Markdown parsed inside their `<details>` leaves a blank line,
 and one who has stopped writing Markdown and started writing a chunk of layout
 does not.
+
+### Comments
+
+An HTML comment is the only comment a Markdown author has. Neither Gruber's spec
+nor CommonMark defines one, so `<!-- … -->` is the idiom, and md2org converts it
+as what the author meant rather than as what it literally is: a one-line comment
+becomes `# …`, and so does every line of a multi-line one. That is a change of
+kind — an Org comment is dropped by every backend, where an HTML comment survives
+into HTML output — and it is the right one, because a note to self is what the
+construct is used for.
+
+A run of comment lines rather than a comment block, because `#+BEGIN_COMMENT` is
+the one lesser block whose contents Org does not unquote. `src`, `example` and
+`export` all reverse the comma on read; `org-element-comment-block-parser` has no
+unescape at all, so a comma put there to stop `#+END_COMMENT` closing the block
+early would stay in the author's text for good. A `#` prefix needs no quoting: it
+puts every line of the body off column 0, where neither a delimiter nor a
+headline can be recognised, and Org strips the `#` and one space on read, so the
+body comes back exactly as written.
+
+The awkward case is a comment tangled up with a stretch of HTML, where the
+comment belongs to the markup rather than to the author. CommonMark has already
+decided that one, and the answer is the rule this section already follows: **a
+comment becomes an Org comment exactly when it forms its own HTML block.** A
+comment absorbed into a larger region is part of that region's literal and never
+reaches the comment path at all.
+
+The start conditions do the work. A block opened by `<div>` or `<details>`
+(condition 6) ends at a blank line, so a comment written inside one with no blank
+line around it stays in the export block. `<pre>` and its fellows (condition 1)
+end at their closing tag and swallow blank lines as well. A comment (condition 2)
+ends at the line holding `-->`, so it never opens a region: a comment on its own
+line is its own block, whatever follows it.
+
+| Source | Becomes |
+|---|---|
+| a comment inside `<div>…</div>`, no blank lines | part of the export block |
+| a comment inside `<pre>`, blank lines and all | part of the export block |
+| a comment on the line directly above `<div>` | an Org comment, then an export block |
+| a comment with blank lines around it | an Org comment |
+| a comment with text after `-->` | an export block, which keeps the trailing text |
+
+A blank line splits an HTML region into several export blocks, so *the literal is
+the region entire* holds for the block CommonMark built, not for the region the
+author had in mind. A comment written between blank lines inside a `<details>` is
+an Org comment for that reason, and it follows the blank-line proxy: an author
+who leaves blank lines has asked for Markdown parsing, and a comment is what
+Markdown parsing finds there.
+
+Up to three spaces of indentation are allowed before any start condition, so an
+indented comment is the same construct as one at column 0 and converts the same
+way.
+
+**An inline comment is the exception.** `text <!-- c --> more` is a comment by the
+same reasoning, but Org has no inline comment and `#` is a whole-line construct,
+so honouring it would break the paragraph. It takes the `@@html:…@@` path along
+with every other inline tag, which makes it the one comment that survives into
+HTML output.
 
 ## Starting point: GitHub Flavoured Markdown (GFM)
 
@@ -114,10 +172,14 @@ leaves the block.
 ### Lossy conversion
 
 Markup md2org silently strips. The characters that go are markup, so invariant 1
-is not engaged.
+is not engaged — with one exception, the alt text, which is prose the author
+wrote rather than markup. Org allows a link description to hold only a plain or
+angle link, so a badge's description becomes the image path and the alt text has
+nowhere to go. Invariant 1 names it as an exception rather than pretending it is
+markup.
 
 - A link title. `[text](/url "title")`
-- Alt text on a badge. `[![Alt](img.svg)](/url)`
+- Alt text on a badge. `[![Alt](img.svg)](/url)` — the exception above
 - `[text]()` becomes `text`
 - `[Install](#install)` becomes `Install`
 
@@ -189,8 +251,14 @@ successfully and used to generate `shortcut/md2org.shortcut`:
 |--------|-------|---------|
 | 39,054 |   115 |     631 |
 
-`test/size.js` asserts that shape, and carries the full table of every dimension
-measured, crashes included.
+`test/size.js` asserts the bytes and the line count, and carries the full table
+of every dimension measured, crashes included. The longest line is recorded here
+because it was part of that build, not because it is a limit: no paste has ever
+failed on column count, and the number drifts by a character or two whenever the
+minifier reassigns identifier names, so a build a little past 631 is not a
+failure. The column check in `test/size.js` sits far above any of this, at 2,000,
+where it guards a different phenomenon — a build with the whole parser on one
+line, which is the one shape that did crash the editor.
 
 ## Known limitations
 

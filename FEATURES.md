@@ -27,7 +27,7 @@ What every construct becomes. The two rules behind it are in [DESIGN.md](DESIGN.
 | Thematic break | `-----` | |
 | HTML blocks | `#+BEGIN_EXPORT html` | see [Not convertible](#not-convertible) |
 | HTML comments, one line | `# …` | |
-| HTML comments, multi-line | `#+BEGIN_COMMENT` | body comma-quoted; not an export block |
+| HTML comments, multi-line | a run of `# …` lines | body kept verbatim; no comma-quoting |
 | HTML comment with text after `-->` | `#+BEGIN_EXPORT html` | keeps the trailing text, which a comment would drop |
 
 ## Inline
@@ -94,18 +94,34 @@ case in the code — it works because nothing stops it.
 | `[[Page Name]]` | an Org fuzzy link — Obsidian and Roam wiki-links convert themselves |
 | `** x` at line start | a heading — see below |
 
-### The one warned case
+### The warned cases
 
-A line in the source starting with `** ` and deeper passes through, and Org reads it as a heading, which claims everything after it until the next heading of equal or lower level. It is the only pass-through construct that changes the document's shape, so those lines are listed in a comment block at the end of the output:
+Five constructs pass through unchanged and are reported instead, because each one
+changes how Org parses the document and none of them has an escape Org would
+honour. They are listed by category at the end of the output:
 
 ```org
 # md2org warnings:
-# line 4: ** Important Reminder **
+# heading: line 4
+# \| in a table cell: line 12, 19
 ```
 
-Line number refers to the output. The block is absent when there is
-nothing to report. A single `*` plus a space is always a Markdown bullet, so
-level-1 headings can't arise this way.
+One line per category, followed by comma-separated line numbers. Line numbers
+refer to the output. The block is absent when there is nothing to report.
+
+- **`heading`** — a line starting `** ` or deeper, which Org reads as a heading, and which then claims everything after it until the next heading of equal or lower level.
+- **an escaped pipe in a table cell** — Org gives a table cell no escape syntax at all, so the row splits.
+- **`]] in a link description`** — Org has no escape for it either, so the link ends early and the rest of the description stays in the document as text.
+- **`stray block delimiter`** — a literal `#+BEGIN_`/`#+END_` line, which can pair with one md2org emitted.
+- **`[[ ]] read as an Org link`** — text Org will read as a fuzzy link; Obsidian and Roam wiki-links convert themselves.
+
+A single `*` plus a space is always a Markdown bullet, so level-1 headings can't
+arise this way.
+
+Text inside a code span or a fenced block is not reported, because Org parses no
+markup there: §Text Markup makes the contents of a verbatim span a literal
+string, so `` `[[Some Page]]` `` is not a link and warning about it would be a
+false finding. `test/warnings.js` asserts both directions.
 
 ## Content that must survive verbatim
 
@@ -188,9 +204,11 @@ HTML support entirely would save only a fraction of what the table above lists.
 
 **This was measured on one device only** (iPhone 14, iOS 26.x), by pasting files
 of known dimensions. `test/size.js` carries the full table — every shape measured,
-crashes included — and asserts bytes, line count and line length together.
+crashes included — and asserts bytes and line count together.
 
-The reference shape is the build that pasted successfully and was used to generate `shortcut/md2org.shortcut`: **39,054 bytes, 115 lines, longest line 631**. The column limit is set one higher, at 632, because the minifier reassigns identifier names on any change to `src/` and the longest line drifts by a character or two for no reason worth chasing; 632 was itself measured as pasting.
+The reference shape is the build that pasted successfully and was used to generate `shortcut/md2org.shortcut`: **39,054 bytes, 115 lines, longest line 631**.
+
+Bytes and line count are measured limits and `test/size.js` asserts both. Longest line is not a limit: no paste has ever failed on column count, and 631 was simply the longest line in that build — the number drifts by a character or two whenever the minifier reassigns identifier names, so the current build is a little past it and that is not a failure. `test/size.js` does carry a column tripwire, set far above any plausible drift at 2,000, and what it guards is esbuild's `lineLimit` in `build.js`: remove that and the file comes out as 28 lines with a longest of 11,472, which is the shape of the one build that ever crashed the editor on line length.
 
 These are shapes, not a box. Nothing combining the largest number from two
 different measurements has ever been pasted, so the limits come from one file and are raised only by pasting a bigger one.

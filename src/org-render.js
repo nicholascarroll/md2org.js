@@ -180,30 +180,28 @@ function renderOrg(ast, esc) {
   // block is a deliberate ergonomic choice, and is pinned by the test suite.
   function htmlComment(literal) {
     var raw = literal.replace(/\n$/, "");
-    if (raw.slice(0, 4) !== "<!--") return false;
+    // Up to three spaces may precede any HTML block start condition, and the
+    // literal keeps them, so an indented comment is the same construct as one at
+    // column 0 and converts the same way.
+    var open = /^ {0,3}<!--/.exec(raw);
+    if (!open) return false;
     // CommonMark ends the block at the line "-->" is on, so the rest of that line
     // is in the literal and is visible in the Markdown. Folding it into a comment
     // deletes it, so hand anything with trailing content to the export block,
     // which keeps every byte.
     var cut = raw.indexOf("-->");
     if (cut !== -1 && !/^\s*$/.test(raw.slice(cut + 3))) return false;
-    var body = cut === -1 ? raw.slice(4) : raw.slice(4, cut);
-    var lines = body.split("\n");
-    if (lines.length === 1) {
-      var one = lines[0].trim();
-      push(pad() + (one ? "# " + one : "#"));
+    var body = raw.slice(open[0].length, cut === -1 ? undefined : cut);
+    // A run of comment lines, not a comment block. Org strips "#" and one space
+    // on read, so the body survives exactly -- blank lines, indentation and all
+    // -- with no comma-quoting, which org-element-comment-block-parser does not
+    // reverse the way it does for src, example and export. Nothing in the body
+    // can start a line either, so "#+END_COMMENT" in a comment is inert and a
+    // "*" line cannot become a headline.
+    body.split("\n").forEach(function (l) {
+      push(pad() + (l ? "# " + l : "#"));
       endLine();
-    } else {
-      push(pad() + "#+BEGIN_COMMENT"); endLine();
-      lines.forEach(function (l, i) {
-        if ((i === 0 || i === lines.length - 1) && l.trim() === "") return;
-        // A comment block is a lesser block like the others: an unquoted "*" line
-        // is still read as a headline, so hidden text becomes document structure,
-        // and "#+END_COMMENT" in the body ends the block early. Missed here.
-        push(pad() + esc.protectBlockBody(l)); endLine();
-      });
-      push(pad() + "#+END_COMMENT"); endLine();
-    }
+    });
     return true;
   }
 
@@ -257,14 +255,25 @@ function renderOrg(ast, esc) {
         // "]]" in a span inside a link description needs no handling of its own
         // any more: it is passed through and reported like any other "]]", so the
         // monospace survives.
-        var lit = node.literal;
-        authored = true;
-        authoredLine += lit;
+        var lit = node.literal, span, bare;
         if (inCell && lit.indexOf("|") !== -1) {
-          push(ent(lit, esc.escapeCell(lit), "\\| in a table cell"));
+          span = ent(lit, esc.escapeCell(lit), "\\| in a table cell");
+          bare = true;
         } else {
-          push(esc.codeSpan(lit));
+          span = esc.codeSpan(lit);
+          // codeSpan keeps its delimiters unless the content holds both "=" and
+          // "~", in which case the monospace is dropped and the characters go out
+          // as themselves.
+          bare = span === lit;
         }
+        authored = true;
+        // Only text that left without verbatim delimiters can be read as Org
+        // markup. §Text Markup makes CONTENTS a literal string, so "[[x]]" inside
+        // "=…=" is not a link, and reporting it is a false finding against an
+        // invariant that is about the parse and nothing else. Verified against
+        // Emacs: "=[[Some Page]]=" yields no link element.
+        if (bare) authoredLine += span;
+        push(span);
         break;
 
       case "emph":
@@ -348,9 +357,11 @@ function renderOrg(ast, esc) {
             // §Regular Link: a description may contain another link only as a
             // plain or angle link, and may never contain "]]". Nesting brackets
             // here would end the outer link early. A badge — an image inside a
-            // link — is the common case: Org writes it as a bare path in the
-            // description ([[url][img.png]]), which renders as an image, and the
-            // inner alt text has to go.
+            // link — is the common case: the description becomes the inner
+            // destination run through escapeLinkPath, so a bare path picks up a
+            // "file:" type ([[url][file:img.png]]) and an anchor or a URL keeps
+            // the type it already had. The inner alt text has to go, which is the
+            // exception named in invariant 1.
             push(esc.escapeLinkPath(node.destination));
             nestedSkip++;
           } else if (node.destination && !node.firstChild) {

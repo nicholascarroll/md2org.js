@@ -89,13 +89,22 @@ check("stars and underscores inside code are untouched",
 console.log("MARKDOWN COMMENTS");
 check("single-line comment becomes an Org comment",
   "<!-- a note -->",
-  "# a note");
+  "#  a note ");
 check("empty comment",
   "<!---->",
   "#");
-check("multi-line comment becomes a comment block",
+check("multi-line comment becomes a run of comment lines",
   "<!--\nline one\nline two\n-->",
-  "#+BEGIN_COMMENT\nline one\nline two\n#+END_COMMENT");
+  "#\n# line one\n# line two\n#");
+check("a blank line in a comment body survives",
+  "<!--\nline one\n\nline two\n-->",
+  "#\n# line one\n#\n# line two\n#");
+check("an indented comment is the same construct",
+  "   <!-- a note -->",
+  "#  a note ");
+check("a comment body needs no comma-quoting",
+  "<!--\n*star line\n#+END_COMMENT\n-->",
+  "#\n# *star line\n# #+END_COMMENT\n#");
 check("comment marker inside code stays literal",
   "```html\n<!-- html example -->\n```",
   "#+BEGIN_SRC html\n<!-- html example -->\n#+END_SRC");
@@ -172,9 +181,9 @@ console.log("MALFORMED INPUT");
 check("unclosed code fence is closed",
   "```py\ncode",
   "#+BEGIN_SRC py\ncode\n#+END_SRC");
-check("unclosed comment is closed",
+check("unclosed comment still converts",
   "<!--\ndangling",
-  "#+BEGIN_COMMENT\ndangling\n#+END_COMMENT");
+  "#\n# dangling");
 
 console.log("EDGE");
 check("empty input", "", "");

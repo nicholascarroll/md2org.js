@@ -56,11 +56,7 @@ If you see this:
 # md2org warnings:
 # \| in a table cell: line 3
 ```
-It is because the source Markdown had `\|` in a table cell. Org gives a table cell no escape syntax at all — not even a backslash, which it leaves in the field as a literal character while still splitting on the pipe — so nothing md2org could emit would make that row come out right. Your `\|` is passed through exactly as you wrote it, the row splits, and the warning tells you where to look.
-
-`]]` in a link description is the same story. Org has no escape for it either, so the link ends at the `]]` and the rest of the description is left in the document as text. Every character survives; the link does not. You get `# ]] in a link description` in the footer.
-
-Both were handled with Org entities before 1.1.0 — `\vert{}` and `\zwnj{}` — which worked until one landed inside a `=verbatim=` or `~code~` span you had written yourself. Org does not expand entities in there, so instead of an invisible separator you got a literal `\zwnj{}` in your exported document. md2org now generates no entities at all.
+It is because the source Markdown had `\|` in a table cell. 
 
 
 ## Known lossy conversions

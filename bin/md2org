@@ -22,6 +22,8 @@ const USAGE =
   "  md2org [file]        convert file (or stdin) to stdout\n" +
   "  cat f.md | md2org    read from a pipe\n\n" +
   "Options:\n" +
+  "  -e, --entities       decode HTML entities and numeric character references\n" +
+  "                       to the characters they name (&mdash; and &#8212; to —)\n" +
   "  -h, --help           show this help\n" +
   "  -v, --version        show the version\n";
 
@@ -38,7 +40,16 @@ if (args.includes("-v") || args.includes("--version")) {
 // An unrecognised option used to fall through to the stdin branch, where the
 // command sat waiting for input that was never coming. Silence is the worst
 // possible answer to a typo, so reject it.
-const badOpt = args.find((a) => a.startsWith("-") && a !== "-");
+/*
+ * Off by default, and deliberately so. build.js proves the CLI, the browser and
+ * the Shortcut convert identically; the Shortcut cannot carry the 123 KB entity
+ * table, so a default that decoded would make the three targets differ and cost
+ * that proof. Asking for it is one flag. See src/md2org.js.
+ */
+const entities = args.includes("-e") || args.includes("--entities");
+
+const badOpt = args.find((a) => a.startsWith("-") && a !== "-" &&
+                                a !== "-e" && a !== "--entities");
 if (badOpt) {
   process.stderr.write("md2org: unknown option " + badOpt + "\n\n" + USAGE);
   process.exit(2);
@@ -61,7 +72,7 @@ if (fileArgs.length > 1) {
  * where the output is going to a stream, rather than in the shared core.
  */
 function convert(input) {
-  const out = md2org(input);
+  const out = entities ? md2org.withEntities(input) : md2org(input);
   process.stdout.write(out === "" ? out : out.replace(/\n?$/, "\n"));
 }
 

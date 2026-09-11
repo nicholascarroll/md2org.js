@@ -23,8 +23,23 @@ const vm = require("vm");
 const path = require("path");
 const extract = require("./extract.js");
 
+const EXPECTED_TOTAL = 652;
 const EXPECTED_PASS = 639;
 const EXPECTED_FAILURES = [25, 26, 27, 32, 33, 34, 37, 38, 39, 40, 41, 503, 506];
+
+/*
+ * The same spec run against src/vendor/commonmark-entities.js, the parser behind
+ * the CLI's -e flag and the browser checkbox. It is upstream's table rather than
+ * tools/entities-compact.js, so it decodes every reference and the thirteen
+ * exceptions above disappear.
+ *
+ * Asserting both numbers is the point of having two bundles: the default is a
+ * measured artifact and so is the option, and the gap between them is exactly the
+ * one decision. tools/build-vendor.js reads these three constants for the headers
+ * it writes into the generated files, so a change here cannot leave a stale
+ * figure behind in a file nobody edits by hand.
+ */
+const EXPECTED_PASS_ENTITIES = 652;
 
 /*
  * The parser under test is the shipped one, src/vendor/commonmark.js — the file
@@ -46,29 +61,38 @@ const ctx = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname, "vendor-cmark-html.js"), "utf8"), ctx);
 const HtmlRenderer = vm.runInContext("CM", ctx).HtmlRenderer;
 const Parser = require("../src/vendor/commonmark.js").Parser;
+const EntityParser = require("../src/vendor/commonmark-entities.js").Parser;
 
 const examples = extract(extract.SPEC);
-let pass = 0;
-const failures = [];
 
-for (const e of examples) {
-  let got;
-  try {
-    got = new HtmlRenderer().render(new Parser().parse(e.markdown + "\n"));
-  } catch (err) {
-    failures.push(e.n);
-    continue;
+function measure(P) {
+  let pass = 0;
+  const failures = [];
+  for (const e of examples) {
+    let got;
+    try {
+      got = new HtmlRenderer().render(new P().parse(e.markdown + "\n"));
+    } catch (err) {
+      failures.push(e.n);
+      continue;
+    }
+    const want = e.html === "" ? "" : e.html + "\n";
+    if (got === want) pass++; else failures.push(e.n);
   }
-  const want = e.html === "" ? "" : e.html + "\n";
-  if (got === want) pass++; else failures.push(e.n);
+  return { pass, failures };
 }
+
+const { pass, failures } = measure(Parser);
+const withEntities = measure(EntityParser);
 
 console.log("PARSE CONFORMANCE   " + pass + "/" + examples.length +
             "  (" + (pass / examples.length * 100).toFixed(1) + "%)");
+console.log("  with -e            " + withEntities.pass + "/" + examples.length +
+            "  (" + (withEntities.pass / examples.length * 100).toFixed(1) + "%)");
 
 let bad = 0;
-if (examples.length !== 652) {
-  console.log("  FAIL extracted " + examples.length + " examples, expected 652");
+if (examples.length !== EXPECTED_TOTAL) {
+  console.log("  FAIL extracted " + examples.length + " examples, expected " + EXPECTED_TOTAL);
   bad++;
 }
 // Example 207 is a bare link reference definition and legitimately renders nothing.
@@ -84,5 +108,10 @@ if (pass !== EXPECTED_PASS || String(failures) !== String(EXPECTED_FAILURES)) {
               " with " + JSON.stringify(failures));
   bad++;
 }
-if (!bad) console.log("  forked parser matches its documented conformance");
+if (withEntities.pass !== EXPECTED_PASS_ENTITIES) {
+  console.log("  FAIL with -e expected " + EXPECTED_PASS_ENTITIES + " passing, got " +
+              withEntities.pass + " with " + JSON.stringify(withEntities.failures));
+  bad++;
+}
+if (!bad) console.log("  both parsers match their documented conformance");
 process.exit(bad ? 1 : 0);

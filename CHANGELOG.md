@@ -20,6 +20,12 @@
   untouched. Decoding the numeric ones produced characters that are Org syntax —
   `&#42; foo` became a level-1 headline, and `&#35; foo` became a comment, which
   dropped the line from every export without a warning.
+- `md2org -e` on the CLI, and a checkbox on the web page, decode HTML entities
+  and numeric character references to the characters they name. Off by default on
+  every target: the iOS Shortcut cannot carry the 123 KB entity table, and
+  `build.js` proving that the three copies convert identically is worth more than
+  saving a flag. Conformance with the option on is 652/652, asserted alongside the
+  default's 639/652.
 - Warnings Footer covers five more constructs that Org parses differently from
   the way the source reads: `]]` in a link description, `\|` in a table cell, a
   stray `#+BEGIN_`/`#+END_` line, `[[Some Page]]`, and a line Org reads as a

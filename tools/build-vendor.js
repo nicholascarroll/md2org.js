@@ -284,17 +284,41 @@ fs.writeFileSync(path.join(tmp, "entry-html.js"),
   'const h = require("./node_modules/commonmark/lib/render/html.js");\n' +
   'module.exports = { Parser: b.Parser || b.default || b, HtmlRenderer: h.default || h };\n');
 
-function bundle(entry, globalName, outfile) {
+function bundle(entry, globalName, outfile, opts) {
   // --line-limit matters more than it looks. Without it esbuild emits the whole
   // parser as a single ~11,000-character line, which crashes the Shortcuts editor
   // when the generated copy is pasted in. Wrapping costs nothing in bytes.
+  //
+  // The entities alias is what keeps the shipped parser small: it swaps upstream's
+  // generated name table, 123 KB minified, for tools/entities-compact.js. Passing
+  // { fullEntities: true } leaves upstream's table in, which is only ever done for
+  // the CLI and browser bundle, where there is no size limit. See DESIGN.md.
   execSync(
     "npx esbuild " + entry + " --bundle --minify --line-limit=80 --format=iife --global-name=" +
-    globalName + " --alias:entities=./entities-compact.js --outfile=" + outfile,
+    globalName + ((opts && opts.fullEntities) ? "" : " --alias:entities=./entities-compact.js") +
+    " --outfile=" + outfile,
     { cwd: tmp, stdio: "inherit" }
   );
   return fs.readFileSync(path.join(tmp, outfile), "utf8").trim();
 }
+
+/*
+ * Read the conformance figures out of the tier that asserts them rather than
+ * restating them here. The header said 651/652 for a long time while
+ * test/conformance.js asserted a different number, because nothing tied the two
+ * together and nobody edits a generated file by hand.
+ */
+function conformanceCounts() {
+  const src = fs.readFileSync(path.join(here, "test/conformance.js"), "utf8");
+  const pass = /EXPECTED_PASS\s*=\s*(\d+)/.exec(src);
+  const full = /EXPECTED_PASS_ENTITIES\s*=\s*(\d+)/.exec(src);
+  const total = /EXPECTED_TOTAL\s*=\s*(\d+)/.exec(src);
+  if (!pass || !full || !total) {
+    throw new Error("build-vendor: cannot read the conformance figures from test/conformance.js");
+  }
+  return { pass: pass[1], full: full[1], total: total[1] };
+}
+const CONF = conformanceCounts();
 
 const shipHeader = [
   "/*",
@@ -303,13 +327,14 @@ const shipHeader = [
   " * Source:  commonmark.js " + CM_VERSION + "  —  https://github.com/commonmark/commonmark.js",
   " * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)",
   " *",
-  " * Built from lib/blocks.js with the 99 KB html-entity table replaced by",
-  " * tools/entities-compact.js. Everything else is upstream. Exposes",
-  " * __cmark.Parser; the HTML renderer is not included, since md2org never emits",
-  " * HTML.",
+  " * Built from lib/blocks.js with upstream's 123 KB html-entity table replaced by",
+  " * tools/entities-compact.js, which decodes nothing. Everything else is upstream.",
+  " * Exposes __cmark.Parser; the HTML renderer is not included, since md2org never",
+  " * emits HTML.",
   " *",
-  " * Conformance: 651/652 CommonMark " + CM_VERSION + " spec examples, asserted by",
-  " * test/conformance.js. The exception is example 25 — see tools/entities-compact.js.",
+  " * Conformance: " + CONF.pass + "/" + CONF.total + " CommonMark " + CM_VERSION + " spec examples,",
+  " * asserted by test/conformance.js. Every exception is the same decision: character",
+  " * references are not decoded. See tools/entities-compact.js for why.",
   " *",
   " * Regenerate: node tools/build-vendor.js",
   " */",
@@ -319,6 +344,36 @@ const shipHeader = [
 fs.writeFileSync(path.join(here, "src/vendor/commonmark.js"),
   shipHeader + bundle("entry-parser.js", "__cmark", "parser.js") +
   '\n\nif (typeof module !== "undefined" && module.exports) { module.exports = __cmark; }\n');
+
+/*
+ * The same parser with upstream's entity table left in, for the CLI's -e flag and
+ * the browser checkbox. Never shipped to the Shortcut: the table alone is 123 KB
+ * against a whole-file budget of 39 KB, so this can only exist where there is no
+ * size limit. src/md2org.js loads it lazily, so it costs nothing until asked for.
+ */
+const entitiesHeader = [
+  "/*",
+  " * Vendored CommonMark parser (parse phase only), WITH upstream's entity table.",
+  " *",
+  " * Source:  commonmark.js " + CM_VERSION + "  —  https://github.com/commonmark/commonmark.js",
+  " * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)",
+  " *",
+  " * Identical to src/vendor/commonmark.js except that character references are",
+  " * decoded to the characters they name. Used only by the CLI's -e flag and the",
+  " * browser page's checkbox; it is far too large for the iOS Shortcut and is never",
+  " * built into shortcut/transform.js.",
+  " *",
+  " * Conformance: " + CONF.full + "/" + CONF.total + " CommonMark " + CM_VERSION + " spec examples,",
+  " * asserted by test/conformance.js.",
+  " *",
+  " * Regenerate: node tools/build-vendor.js",
+  " */",
+  ""
+].join("\n");
+
+fs.writeFileSync(path.join(here, "src/vendor/commonmark-entities.js"),
+  entitiesHeader + bundle("entry-parser.js", "__cmarkEntities", "parser-entities.js", { fullEntities: true }) +
+  '\n\nif (typeof module !== "undefined" && module.exports) { module.exports = __cmarkEntities; }\n');
 
 const testHeader = [
   "/*",

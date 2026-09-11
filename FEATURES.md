@@ -51,7 +51,7 @@ What every construct becomes. The two rules behind it are in [DESIGN.md](DESIGN.
 | `<http://e.com>` | `[[http://e.com][http://e.com]]` | |
 | Bare `http://…` | unchanged | Org parses plain links natively |
 | Hard line break | `\\` | |
-| `&#65;` `&#x41;` `&amp;` `&mdash;` | passed through unchanged | md2org decodes no character reference of any kind |
+| `&#65;` `&#x41;` `&amp;` `&mdash;` | passed through unchanged | md2org decodes no character reference of any kind. `md2org -e`, or the checkbox on the web page, decodes them all to the characters they name; off by default, and not available in the Shortcut, whose budget cannot hold the table |
 | `\*escaped\*` | `*escaped*` | the backslash is Markdown markup and the parser consumes it |
 | `a**b**c` | `a*b*c` | Org's PRE rule forbids markup starting inside a word, so this reads as plain text |
 

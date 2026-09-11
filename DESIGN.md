@@ -155,6 +155,35 @@ represent, against a structural loss it was causing itself. It is also the whole
 of the conformance gap: thirteen of the spec's 652 examples, counted in
 `test/conformance.js`.
 
+#### Decoding on request
+
+The reason for the default is size, and only the Shortcut has a size problem.
+Upstream's entity table is 123 KB minified against a whole-file budget of 39 KB,
+so the shipped parser cannot carry it — but the CLI and the browser have no such
+limit, and there they can offer the conversion as something the user asks for.
+`md2org -e`, and a checkbox on the page. Every reference becomes the UTF-8
+character it names.
+
+It is **off by default on every target**, which is not tidiness. `build.js`
+verifies that `src/`, the browser copy and the Shortcut copy convert the same
+corpus identically, and that check is the only proof that the three targets are
+one program rather than three that agree today. A default that differed by target
+would mean relaxing it permanently, for every future change. Off by default, the
+check keeps working untouched and extends to the new copy as well.
+
+`src/vendor/commonmark-entities.js` is the same fork with upstream's table left
+in, built by the same `tools/build-vendor.js` from the same patched source. The
+core is unchanged and does not know the option exists: it reads `__cmark` when it
+is called rather than closing over it, so the parser is swapped from outside the
+core markers. Nothing reaches `shortcut/transform.js`, which is byte-for-byte what
+it was. `test/conformance.js` measures both parsers, 639 and 652, and the gap
+between them is exactly this one decision.
+
+The decoded characters can be Org syntax — `&#42; foo` becomes a headline and
+`&#35; foo` a comment. Both are reported in the Warnings Footer like any other
+line Org reads differently from the way the source read, so the option opens no
+hole the default does not already cover.
+
 md2org generates no Org entities. There is no `\vert{}`, no `\zwnj{}`, no
 `\name{}`. The output contains only characters the author wrote, plus the Org
 markup md2org emits for the constructs it converts.

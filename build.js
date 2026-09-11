@@ -15,6 +15,7 @@
 const fs = require("fs");
 const wrapLines = require("./tools/wrap-lines.js");
 const esbuild = require("esbuild");
+const vm = require("vm");
 
 /*
  * Prefix on any message the Shortcut should treat as a failure rather than as
@@ -132,6 +133,36 @@ fs.writeFileSync(
   "if (typeof window !== \"undefined\") {\n  window.md2org = md2org;\n}\n"
 );
 
+/*
+ * 1b. web copy with character-reference decoding, for the page's checkbox.
+ *
+ * The same core and the same src/, rebuilt over the parser that carries upstream's
+ * entity table. Self-contained and wrapped in its own scope, exposing only
+ * window.md2orgEntities: it does not reach into the first bundle, so neither file
+ * can break the other, and the page loads it on demand rather than making every
+ * visitor pay 156 KB for an option that is off.
+ *
+ * Never built into shortcut/transform.js — the table alone is three times the
+ * Shortcut's whole budget.
+ */
+const entitiesBundle = wrapLines(stripComments([
+  vendor("src/vendor/commonmark-entities.js").replace(/\bvar __cmarkEntities=/, "var __cmark="),
+  deindent(core("src/org-escape.js")),
+  deindent(core("src/org-render.js")),
+  deindent(core("src/md2org.js"))
+].join("\n\n")), 400);
+
+fs.writeFileSync(
+  "docs/md2org-entities.js",
+  banner +
+  "// Character references decoded to the characters they name. Loaded on demand\n" +
+  "// by docs/index.html when the box is ticked; md2org proper is docs/md2org.js.\n" +
+  "(function () {\n" + entitiesBundle + "\n" +
+  "if (typeof window !== \"undefined\") { window.md2orgEntities = md2org; }\n" +
+  "if (typeof module !== \"undefined\" && module.exports) { module.exports = md2org; }\n" +
+  "})();\n"
+);
+
 // 2. shortcut copy: a function body — input arrives as $text, result is returned.
 //
 // The converter runs inside a try/catch because a throw in this action yields
@@ -175,4 +206,20 @@ for (const s of probes) {
   }
   if (md(s) !== shortcutFn(s)) throw new Error("shortcut/transform.js drifted");
 }
-console.log("build ok — docs/md2org.js and shortcut/transform.js regenerated and verified");
+
+/*
+ * The entities copy is checked the same way, against md2org.withEntities rather
+ * than against the default. Same corpus, same requirement: the option must be the
+ * same program too, not a second implementation that happens to agree today.
+ */
+const entitiesFn = (() => {
+  const c = vm.createContext({ window: {}, module: { exports: {} } });
+  vm.runInContext(fs.readFileSync("docs/md2org-entities.js", "utf8"), c);
+  return vm.runInContext("window.md2orgEntities", c);
+})();
+for (const s of probes) {
+  if (md.withEntities(s) !== entitiesFn(s)) throw new Error("docs/md2org-entities.js drifted");
+}
+
+console.log("build ok — docs/md2org.js, docs/md2org-entities.js and " +
+            "shortcut/transform.js regenerated and verified");

@@ -57,6 +57,48 @@ function md2org(src) {
 
 /* --8<-- core end */
 
+/*
+ * Character-reference decoding, off by default.
+ *
+ * md2org decodes no character reference: "&mdash;", "&#8212;" and "&#x2014;" all
+ * reach the Org file as the author typed them. That is the contract, it is one
+ * sentence with no exceptions, and it is the same on all three targets.
+ *
+ * The reason is size and only size. Upstream's name table is 123 KB minified
+ * against a whole-file budget of 39 KB for the iOS Shortcut, so the shipped parser
+ * cannot carry it. The CLI and the browser have no such limit, so they can offer
+ * the conversion as something the user asks for: every reference becomes the UTF-8
+ * character it names.
+ *
+ * It stays off by default, which is not tidiness. build.js verifies that src/, the
+ * browser copy and the Shortcut copy convert 53 inputs identically, and that check
+ * is the only proof that the three targets are one program. A default that differed
+ * by target would mean relaxing it permanently, for every future change.
+ *
+ * This lives outside the core markers, so nothing here reaches the Shortcut and
+ * the option costs it zero bytes. The core reads __cmark when it is called rather
+ * than closing over it, which is what lets the parser be swapped from out here
+ * without the core knowing the option exists. The 156 KB bundle is required on
+ * first use only.
+ *
+ * Decoding produces characters, and some of them are Org syntax — "&#42; foo"
+ * decodes to a level-1 headline and "&#35; foo" to a comment. Both are reported
+ * in the Warnings Footer like any other line Org reads differently from the way
+ * the source read, so the option widens no hole the default does not already have.
+ */
+var __cmarkEntities = null;
+
+md2org.withEntities = function (src) {
+  if (!__cmarkEntities) __cmarkEntities = require("./vendor/commonmark-entities.js");
+  var saved = __cmark;
+  __cmark = __cmarkEntities;
+  try {
+    return md2org(src);
+  } finally {
+    __cmark = saved;
+  }
+};
+
 // Universal export: CommonJS (Node/CLI), bundlers, browser global.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = md2org;

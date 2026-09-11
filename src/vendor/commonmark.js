@@ -4,13 +4,14 @@
  * Source:  commonmark.js 0.31.2  —  https://github.com/commonmark/commonmark.js
  * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)
  *
- * Built from lib/blocks.js with the 99 KB html-entity table replaced by
- * tools/entities-compact.js. Everything else is upstream. Exposes
- * __cmark.Parser; the HTML renderer is not included, since md2org never emits
- * HTML.
+ * Built from lib/blocks.js with upstream's 123 KB html-entity table replaced by
+ * tools/entities-compact.js, which decodes nothing. Everything else is upstream.
+ * Exposes __cmark.Parser; the HTML renderer is not included, since md2org never
+ * emits HTML.
  *
- * Conformance: 651/652 CommonMark 0.31.2 spec examples, asserted by
- * test/conformance.js. The exception is example 25 — see tools/entities-compact.js.
+ * Conformance: 639/652 CommonMark 0.31.2 spec examples,
+ * asserted by test/conformance.js. Every exception is the same decision: character
+ * references are not decoded. See tools/entities-compact.js for why.
  *
  * Regenerate: node tools/build-vendor.js
  */

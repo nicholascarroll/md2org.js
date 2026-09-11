@@ -490,8 +490,61 @@ const root = path.join(__dirname, "..");
 function loadDerived() {
   const web = require(path.join(root, "docs", "md2org.js"));
   const shortcutSrc = fs.readFileSync(path.join(root, "shortcut", "transform.js"), "utf8");
-  return { web: web, shortcut: new Function("$text", shortcutSrc) };
+  // docs/md2org-entities.js is an IIFE that assigns to window, so it needs a
+  // context with one rather than a require.
+  const vm = require("vm");
+  const c = vm.createContext({ window: {}, module: { exports: {} } });
+  vm.runInContext(fs.readFileSync(path.join(root, "docs", "md2org-entities.js"), "utf8"), c);
+  return {
+    web: web,
+    shortcut: new Function("$text", shortcutSrc),
+    webEntities: vm.runInContext("window.md2orgEntities", c)
+  };
 }
+
+/*
+ * Character-reference decoding, the CLI's -e and the browser's checkbox.
+ *
+ * Off by default, so every case above still holds. What is asserted here is that
+ * the option decodes, that it leaves the default alone, and that decoding into a
+ * character which is Org syntax is still reported — the option must not be a way
+ * to lose a line quietly.
+ */
+console.log("CHARACTER REFERENCES WITH -e");
+
+function checkEntities(name, src, want) {
+  const got = md2org.withEntities(src);
+  if (got === want) { pass++; console.log("  ok   " + name); return; }
+  fail++;
+  console.log("  FAIL " + name);
+  console.log("    input:    " + JSON.stringify(src));
+  console.log("    expected: " + JSON.stringify(want));
+  console.log("    got:      " + JSON.stringify(got));
+}
+
+checkEntities("named reference decodes", "A &mdash; B", "A — B");
+checkEntities("decimal reference decodes", "A &#8212; B", "A — B");
+checkEntities("hex reference decodes", "A &#x2014; B", "A — B");
+checkEntities("predefined reference decodes", "Tom &amp; Jerry", "Tom & Jerry");
+checkEntities("an unknown name is left alone", "a &notreal; b", "a &notreal; b");
+checkEntities("a reference decoded into a headline is warned",
+  "&#42; foo", "* foo\n\n# md2org warnings:\n# heading: line 1");
+checkEntities("a reference decoded into a comment is warned",
+  "&#35; foo", "# foo\n\n# md2org warnings:\n# comment: line 1");
+
+/* The option must not leak: the default is the default before and after. */
+(function () {
+  const before = md2org("A &mdash; B");
+  md2org.withEntities("A &mdash; B");
+  const after = md2org("A &mdash; B");
+  const name = "the option does not leak into the default";
+  if (before === "A &mdash; B" && after === before) { pass++; console.log("  ok   " + name); }
+  else {
+    fail++;
+    console.log("  FAIL " + name);
+    console.log("    before " + JSON.stringify(before) + "  after " + JSON.stringify(after));
+  }
+})();
 
 let derived;
 try {
@@ -520,6 +573,12 @@ if (derived) {
     if (derived.shortcut(src) !== want) {
       drift++;
       console.log("  FAIL shortcut/transform.js differs from src/ on " + JSON.stringify(src));
+    }
+    // The entities copy is the same program with a different parser, so it is held
+    // to src/ too — against md2org.withEntities, not the default.
+    if (derived.webEntities(src) !== md2org.withEntities(src)) {
+      drift++;
+      console.log("  FAIL docs/md2org-entities.js differs from src/ on " + JSON.stringify(src));
     }
   }
   if (drift) {

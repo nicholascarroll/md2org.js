@@ -88,6 +88,34 @@ check("empty input produces empty output, not a newline", () => {
   eq(r.stdout, "", "stdout");
 });
 
+/*
+ * -e is the only flag that changes the conversion rather than the plumbing, and it
+ * is the one place the CLI and the Shortcut deliberately differ, so the default
+ * must be asserted alongside it: a regression that turned decoding on would
+ * otherwise look like a passing suite.
+ */
+check("references pass through by default", () => {
+  const r = run([], "A &mdash; B and &#8212;\n");
+  eq(r.status, 0, "exit status");
+  eq(r.stdout, "A &mdash; B and &#8212;\n", "stdout");
+});
+
+check("-e decodes references to their characters", () => {
+  const r = run(["-e"], "A &mdash; B and &#8212;\n");
+  eq(r.status, 0, "exit status");
+  eq(r.stdout, "A — B and —\n", "stdout");
+});
+
+check("--entities is the same as -e", () => {
+  eq(run(["--entities"], "A &mdash; B\n").stdout, run(["-e"], "A &mdash; B\n").stdout, "stdout");
+});
+
+check("-e is listed in the usage", () => {
+  if (!/-e, --entities/.test(run(["--help"]).stdout)) {
+    throw new Error("the usage does not mention -e");
+  }
+});
+
 check("--help exits 0 and writes usage to stdout", () => {
   const r = run(["--help"]);
   eq(r.status, 0, "exit status");

@@ -169,7 +169,21 @@ const TABLE = [
 
   { name: "a link description ending in ]",
     md: "[a\\]](/u)",
-    key: "]] in a link description" }
+    key: "]] in a link description" },
+
+  /*
+   * "\#" is CommonMark's own escape for a literal hash at line start. The parser
+   * consumes the backslash and the bare "#" that survives is an Org comment, so
+   * the line leaves every export while every character stays in the file. That is
+   * why invariant 1 cannot see it and this row has to.
+   */
+  { name: "escaped hash becomes an Org comment",
+    md: "text\n\n\\# not a heading",
+    key: "comment" },
+
+  { name: "escaped hash inside a quote block",
+    md: "> \\# not a heading\n>\n> body",
+    key: "comment" }
 ];
 
 /*
@@ -242,7 +256,23 @@ const SILENT = [
   ["a block delimiter inside a fenced block", "```\n#+END_SRC\n```"],
   ["an asterisk line inside a fenced block", "```\n** not a heading\n```"],
   ["]] inside a code span", "A `a]]b` literal."],
-  ["a pipe inside a code span outside a table", "A `x|y` literal."]
+  ["a pipe inside a code span outside a table", "A `x|y` literal."],
+  /*
+   * "# " is the most ordinary line in a shell or Python block, and Org parses no
+   * comment inside one. Warning here would fire on nearly every README converted,
+   * which is the same false-finding the "[[ ]]" cases above guard against. The
+   * heading check gets this protection free, because a block body is comma-quoted
+   * for "*" and "#+" lines; a bare "# " is not, so the exemption has to be
+   * explicit. Confirmed against Emacs 29.3: no comment element in either block.
+   */
+  ["a hash comment inside a src block", "```sh\n# install it\nnpm i\n```"],
+  ["a hash comment inside an example block", "```\n# install it\n```"],
+  /* Org wants "#" then whitespace or end of line; neither of these is a comment. */
+  ["a hash with no space after it", "\\#1 fixed"],
+  ["a keyword line", "\\#+TITLE: x"],
+  /* Comments md2org emits itself, which are the point rather than an accident. */
+  ["md2org's own one-line comment", "<!-- a note -->"],
+  ["md2org's own multi-line comment", "<!--\nline one\nline two\n-->"]
 ];
 
 for (const [name, md] of SILENT) {

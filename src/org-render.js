@@ -60,6 +60,8 @@ function renderOrg(ast, esc) {
   var authored = false;     // this line carries text the author wrote
   var authoredLine = "";    // just the authored part of it
   var declaredHeadline = false;  // md2org emitted a headline on this line, on purpose
+  var declaredComment = false;   // md2org emitted an Org comment on this line, on purpose
+  var inVerbatim = false;        // emitting the body of a block Org does not parse
   var descStart = -1;       // index in the current line where the description begins
   function warnAt(k) {
     var a = renderOrg.warn[k] || (renderOrg.warn[k] = []), n = out.length + 1;
@@ -104,6 +106,22 @@ function renderOrg(ast, esc) {
     // otherwise at the moment it emitted one, which is the only place the answer
     // is known for certain rather than reconstructed.
     if (!declaredHeadline && /^\*+\s/.test(line)) warnAt("heading");
+    // A body line Org will read as a comment, which is worse than the headline
+    // above: a headline keeps its text on the page and merely re-parents what
+    // follows, where a comment takes the line out of every export. Nothing is
+    // lost from the file, so invariant 1 holds and cannot catch it.
+    //
+    // The common route is not exotic. "\#" is CommonMark's own way to write a
+    // literal hash at line start, the parser consumes the backslash because the
+    // backslash is Markdown markup, and the bare "#" that remains is an Org
+    // comment. Org has no escape for a leading "#" in a paragraph, so like its
+    // neighbours this is passed through and reported rather than fixed.
+    //
+    // Org wants "#" followed by whitespace or end of line, so "#1 fixed" stays a
+    // paragraph and "#+TITLE:" is a keyword; neither matches. Two exemptions:
+    // a comment md2org emitted itself, and a verbatim block body, where Org parses
+    // no comment at all and "# install it" is the most ordinary line there is.
+    if (!declaredComment && !inVerbatim && /^[ \t]*#(\s|$)/.test(line)) warnAt("comment");
     // A delimiter the author wrote, not one md2org emitted. It pairs with one
     // md2org did emit, opening or closing a block that was never meant to be
     // there. Only reachable from authored text: a block body is comma-quoted on
@@ -116,6 +134,7 @@ function renderOrg(ast, esc) {
     authored = false;
     authoredLine = "";
     declaredHeadline = false;
+    declaredComment = false;
     out.push(line);
     line = "";
     atLineStart = true;
@@ -168,11 +187,18 @@ function renderOrg(ast, esc) {
     push("]]");
   }
 
+  // Only ever used for the body of a block whose contents Org does not parse:
+  // the export block at "html_block" and the src/example block at "code_block".
+  // A quote block is a greater block and its contents go through the walker like
+  // any other content, so it never arrives here — which is what lets the comment
+  // check below tell the two apart.
   function emitBlockLines(str) {
+    inVerbatim = true;
     str.replace(/\n$/, "").split("\n").forEach(function (l) {
       push(pad() + l);
       endLine();
     });
+    inVerbatim = false;
   }
 
   // Markdown HTML comments are not really HTML to an Org reader; they are
@@ -200,6 +226,7 @@ function renderOrg(ast, esc) {
     // "*" line cannot become a headline.
     body.split("\n").forEach(function (l) {
       push(pad() + (l ? "# " + l : "#"));
+      declaredComment = true;
       endLine();
     });
     return true;

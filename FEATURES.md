@@ -51,8 +51,7 @@ What every construct becomes. The two rules behind it are in [DESIGN.md](DESIGN.
 | `<http://e.com>` | `[[http://e.com][http://e.com]]` | |
 | Bare `http://…` | unchanged | Org parses plain links natively |
 | Hard line break | `\\` | |
-| `&#65;` | resolved to the character | numeric references only |
-| `&amp;` `&mdash;` | passed through unchanged | named references are not markup md2org converts |
+| `&#65;` `&#x41;` `&amp;` `&mdash;` | passed through unchanged | md2org decodes no character reference of any kind |
 | `\*escaped\*` | `*escaped*` | the backslash is Markdown markup and the parser consumes it |
 | `a**b**c` | `a*b*c` | Org's PRE rule forbids markup starting inside a word, so this reads as plain text |
 
@@ -114,9 +113,13 @@ refer to the output. The block is absent when there is nothing to report.
 - **`]] in a link description`** — Org has no escape for it either, so the link ends early and the rest of the description stays in the document as text.
 - **`stray block delimiter`** — a literal `#+BEGIN_`/`#+END_` line, which can pair with one md2org emitted.
 - **`[[ ]] read as an Org link`** — text Org will read as a fuzzy link; Obsidian and Roam wiki-links convert themselves.
+- **`comment`** — a line Org reads as a comment, which drops it from every export. `\#` is CommonMark's escape for a literal hash at line start; the parser consumes the backslash and the bare `#` left behind is an Org comment. Org wants `#` then whitespace or end of line, so `\#1 fixed` and `\#+TITLE:` are not affected, and a `# ` line inside a code fence is not reported because Org parses no comment there.
 
-A single `*` plus a space is always a Markdown bullet, so level-1 headings can't
-arise this way.
+A level-1 heading is not known to arise: a single `*` plus a space is always a
+Markdown bullet. That was stated as *cannot* until 1.1.0 and was wrong — `&#42; foo`
+decoded to `* foo`, which Org read as a headline. Character references are no longer
+decoded, so the route is closed, but the check is on the finished line rather than on
+any list of constructs, which is why it warned even while the claim was false.
 
 Text inside a code span or a fenced block is not reported, because Org parses no
 markup there: §Text Markup makes the contents of a verbatim span a literal
@@ -163,7 +166,7 @@ Org has no equivalent, so the first rule can't be kept in full.
 | Alt text on a badge | a link description may contain only a plain or angle link |
 | A pipe inside code in a table cell | GFM requires the pipe be escaped; a cell can't hold a bare `\|` |
 | Faithful raw HTML | export blocks survive HTML export and vanish everywhere else |
-| named entities such as `&mdash;`, `&HilbertSpace;` | passed through; the full entity table far exceeds the bytes budget |
+| Character references, `&mdash;` and `&#8212;` alike | passed through; the named table far exceeds the bytes budget, and decoding the numeric ones produced Org syntax — see DESIGN.md |
 | Bullet character, emphasis spelling | CommonMark's tree doesn't record which was used |
 | `[Install](#install)`, a table of contents | Org anchors must be declared as `CUSTOM_ID` properties |
 
@@ -194,7 +197,7 @@ Everything that could be cut, if it came to it:
 | Cut | Saves | Cost to the user |
 |---|---|---|
 | HTML blocks and raw inline HTML | ~0.6 KB | HTML passes through as text |
-| Numeric-only entity decoding | ~0.1 KB | named references pass through; 7 spec examples |
+| Character-reference decoding | 144 B, taken in 1.1.0 | all references pass through; 13 spec examples |
 
 These figures predate the fork and need re-measuring; the table code moved into
 the parser and is no longer separable.

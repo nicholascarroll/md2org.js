@@ -419,7 +419,23 @@ check("indented code block", "    code here", "#+BEGIN_EXAMPLE\ncode here\n#+END
 check("tilde fence", "~~~\ncode\n~~~", "#+BEGIN_EXAMPLE\ncode\n#+END_EXAMPLE");
 check("autolink", "<http://example.com>", "[[http://example.com][http://example.com]]");
 check("hard line break", "foo  \nbar", "foo\\\\\nbar");
+/*
+ * Character references, named and numeric alike, reach the output as written.
+ *
+ * The numeric cases are the ones with teeth. Decoding them produces characters
+ * that are Org syntax: "&#42; x" became a level-1 headline and "&#35; x" became
+ * an Org comment, which dropped the line from every export without a warning.
+ * Nothing in this suite covered references at all before 1.1.0 — the decoding
+ * could be removed from the parser and every tier still passed — so these are
+ * here to make the contract observable rather than merely intended.
+ */
 check("named entity references pass through", "&amp; &copy;", "&amp; &copy;");
+check("decimal references pass through", "A &#8212; B", "A &#8212; B");
+check("hex references pass through", "A &#x2014; B", "A &#x2014; B");
+check("a reference is never decoded into a headline", "&#42; foo", "&#42; foo");
+check("a reference is never decoded into a comment", "&#35; foo", "&#35; foo");
+check("a reference in a link destination is left alone",
+  "[a](/u&#65;)", "[[/u&#65;][a]]");
 check("reference link", "[foo]\n\n[foo]: /url", "[[/url][foo]]");
 check("ordered list start number", "5. five\n6. six", "5. [@5] five\n6. six");
 

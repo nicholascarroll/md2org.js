@@ -6,17 +6,16 @@
  * This checks the parse half only, against the spec's own HTML, so nothing here is
  * an authored expectation. The Org half is checked by test/spec.js.
  *
- * Expected result is 645/652, and the seven exceptions are all the same decision:
- * named entity references are not decoded. DESIGN.md passes them through as the
- * author wrote them, so the parser has no named table at all — upstream's is 99 KB,
- * about two thirds of the whole bundle, and carrying it would put the Shortcut copy
- * far past what its code field will accept.
+ * Expected result is 639/652, and the thirteen exceptions are all one decision:
+ * md2org decodes no character references, named or numeric. See
+ * tools/entities-compact.js for why, and DESIGN.md for the contract.
  *
- * Example 25 is the direct test of named entities. The other six use one somewhere
+ * Examples 25, 26 and 27 test references directly. The other ten use one somewhere
  * the spec expects it resolved before the surrounding construct is built: in a link
- * destination, a link title, a link reference definition, or a code fence's info
- * string. Nothing there is a parse defect — the parser is doing exactly what the
- * contract asks — but the count is asserted so the trade cannot drift silently into
+ * destination, a link title, a link reference definition, a code fence's info
+ * string, or as a literal "*", "#", tab or newline that would otherwise be markup.
+ * Nothing there is a parse defect — the parser is doing exactly what the contract
+ * asks — but the count is asserted so the trade cannot drift silently into
  * something larger.
  */
 const fs = require("fs");
@@ -24,21 +23,38 @@ const vm = require("vm");
 const path = require("path");
 const extract = require("./extract.js");
 
-const EXPECTED_PASS = 645;
-const EXPECTED_FAILURES = [25, 32, 33, 34, 41, 503, 506];
+const EXPECTED_PASS = 639;
+const EXPECTED_FAILURES = [25, 26, 27, 32, 33, 34, 37, 38, 39, 40, 41, 503, 506];
 
+/*
+ * The parser under test is the shipped one, src/vendor/commonmark.js — the file
+ * src/md2org.js actually requires. test/vendor-cmark-html.js supplies only the
+ * HTML renderer, so the spec's own HTML can be compared against.
+ *
+ * It read the parser out of the test bundle until 1.1.0, which measured a sibling
+ * rather than the artifact. tools/build-vendor.js writes both from the same patched
+ * upstream, so they agreed by construction, and nothing checked that they still
+ * did: renaming a method in the shipped parser broke every code span while this
+ * tier reported 639/652 and said the fork matched its documented conformance. It
+ * is also how the 1.1.0 character-reference change passed here unchanged until the
+ * test bundle was patched too.
+ *
+ * The test bundle is loaded in a vm context because it is an IIFE that assigns to
+ * a global.
+ */
 const ctx = vm.createContext({});
 vm.runInContext(fs.readFileSync(path.join(__dirname, "vendor-cmark-html.js"), "utf8"), ctx);
+const HtmlRenderer = vm.runInContext("CM", ctx).HtmlRenderer;
+const Parser = require("../src/vendor/commonmark.js").Parser;
 
 const examples = extract(extract.SPEC);
 let pass = 0;
 const failures = [];
 
 for (const e of examples) {
-  ctx.__doc = e.markdown + "\n";
   let got;
   try {
-    got = vm.runInContext("new CM.HtmlRenderer().render(new CM.Parser().parse(__doc))", ctx);
+    got = new HtmlRenderer().render(new Parser().parse(e.markdown + "\n"));
   } catch (err) {
     failures.push(e.n);
     continue;

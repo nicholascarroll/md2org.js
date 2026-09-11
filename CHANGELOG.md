@@ -15,11 +15,18 @@
 ## [1.1.0] — 2026-09-08
 
 ### Added
-- Named HTML entities such as `&mdash;` now pass through as the author wrote
-  them. Numeric references such as `&#65;` still resolve.
-- Warnings Footer covers four more constructs that Org parses differently from
+- Character references now pass through as the author wrote them, named and
+  numeric alike: `&mdash;`, `&#8212;` and `&#x2014;` all reach the Org file
+  untouched. Decoding the numeric ones produced characters that are Org syntax —
+  `&#42; foo` became a level-1 headline, and `&#35; foo` became a comment, which
+  dropped the line from every export without a warning.
+- Warnings Footer covers five more constructs that Org parses differently from
   the way the source reads: `]]` in a link description, `\|` in a table cell, a
-  stray `#+BEGIN_`/`#+END_` line, and `[[Some Page]]`.
+  stray `#+BEGIN_`/`#+END_` line, `[[Some Page]]`, and a line Org reads as a
+  comment. The last of those is reached by `\#`, CommonMark's own escape for a
+  literal hash at line start: the bare `#` left after the parser consumes the
+  backslash is an Org comment, so the line was leaving every export with no
+  notice and every character still present in the file.
 - `test/warnings.js` — the first tier to test DESIGN.md invariant 4. Asserts a
   warning for every construct in the warned table, and accounts for every
   headline in the output against the headings in the source, so one that appears
@@ -38,8 +45,8 @@
   expanding it. Both constructs now pass through and are warned.
 - A code span holding `]]` in a link description keeps its monospace. It only
   ever lost it so the escape could be applied outside the delimiters.
-- CommonMark conformance is 645/652, from 651/652. All seven exceptions are the
-  same decision: named entity references are not decoded.
+- CommonMark conformance is 639/652, from 651/652. All thirteen exceptions are
+  the same decision: character references are not decoded.
 - The fuzzer generates nested documents, so a construct can appear inside
   another. The previous generator could not express the shape the 1.0.1 `]]`
   defect lived in.

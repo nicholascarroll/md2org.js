@@ -123,11 +123,37 @@ Not in the GFM spec, but converted to an Org equivalent.
 ### Pass through, silently
 
 GFM that is not converted. It appears in the Org output as it was in the source,
-unescaped, and Org does nothing surprising with it.
+unescaped.
 
-- HTML named entities: `&mdash;`, `&hellip;` and the rest. Numeric character
-  references, `&#65;` and `&#x41;`, are still resolved by the parser, because
-  they are a rule rather than a table and cost almost nothing.
+- Character references, of every kind. `&mdash;` and `&hellip;`, `&#65;` and
+  `&#x41;` all reach the file exactly as the author typed them.
+
+One construct, one rule, no exceptions. Until 1.1.0 the numeric ones were decoded
+and the named ones were not, on the grounds that a rule costs almost nothing where
+a 99 KB table does not. That was a size answer to a question the reader was asking
+about meaning, and it left the same construct with two behaviours.
+
+Keeping the decoding turned out to be the wrong half, for a reason unrelated to
+size. Decoding produces characters, and in Org several of those characters are
+syntax:
+
+| Source | Decoded to | What Org made of it |
+|---|---|---|
+| `&#42; foo` | `* foo` | a level-1 headline |
+| `&#35; foo` | `# foo` | a comment, so the line left every export |
+
+An author writes `&#42;` precisely so an asterisk is not read as markup. In an
+HTML renderer decoding it is safe, because `*` means nothing in HTML. Decoding it
+into Org manufactures the markup the escape existed to prevent — the same mistake
+as generating `\vert{}`, reached from the other end. The second row is the worse
+one: nothing warned, and the line was gone from the export with every character
+still present in the file.
+
+The cost is that a reader sees `&mdash;` where Org exports to HTML, because Org
+escapes the ampersand. That is a display loss on a construct md2org cannot
+represent, against a structural loss it was causing itself. It is also the whole
+of the conformance gap: thirteen of the spec's 652 examples, counted in
+`test/conformance.js`.
 
 md2org generates no Org entities. There is no `\vert{}`, no `\zwnj{}`, no
 `\name{}`. The output contains only characters the author wrote, plus the Org
@@ -151,6 +177,7 @@ the result differently from the way the source read. This list is invariant 4.
 | `\|` in a table cell | Org has no escape for a cell, so the cell splits and the backslash stays in the output |
 | `#+BEGIN_…` or `#+END_…` on its own line | pairs with a delimiter md2org emitted, opening or closing a block |
 | `[[Some Page]]` | read as an Org link |
+| a line Org reads as a comment | the line is dropped from every export |
 
 The headline row is stated as an outcome rather than a construct, because more
 than one route reaches it and naming them was how the check kept going wrong.
@@ -164,10 +191,37 @@ declared at the moment it emitted one, which is the only point where the answer 
 known rather than reconstructed. Everything else that reads as a headline is
 reported.
 
-A level-1 heading still cannot arise. A single `*` and a space is always a
+A level-1 heading is not known to arise. A single `*` and a space is always a
 Markdown bullet, CommonMark forbids an emphasis opener followed by whitespace so a
 converted `__…__` never yields `* `, and an asterisk inside an HTML block never
 leaves the block.
+
+This was written as *cannot* until 1.1.0, and it was wrong: `&#42; foo` decoded to
+`* foo` and Org read a headline, by a route none of the three above describes. The
+route is closed — character references are no longer decoded — but the correction
+worth keeping is that the list is an argument and not a proof, so the claim is
+stated as what has been looked for rather than what is impossible. The warning
+fires either way, because the check is on the finished line rather than on the
+constructs enumerated here, which is the whole reason it survived being wrong.
+
+The comment row is the same shape and worse in effect. A headline keeps its text
+on the page and only re-parents what follows; a comment takes the line out of
+every backend, and every character is still in the file, so invariant 1 holds and
+cannot see it. The common route is not exotic: `\#` is CommonMark's own escape for
+a literal hash at line start, the parser consumes the backslash because the
+backslash is Markdown markup, and the bare `#` that remains is an Org comment.
+Org offers no escape for a leading `#` in a paragraph, so this is passed through
+and reported like its neighbours.
+
+Org wants `#` followed by whitespace or end of line, so `#1 fixed` stays a
+paragraph and `#+TITLE:` is a keyword. Two exemptions: a comment md2org emitted
+itself, and the body of a block whose contents Org does not parse. The second is
+not optional — `# ` is the most ordinary line in a shell or Python fence, and Org
+reads no comment there, so warning would be a false finding on nearly every
+document converted. The headline check gets that protection free, because a block
+body is comma-quoted for `*` and `#+` lines; a bare `# ` is not, so it has to be
+stated. A quote block is the opposite case and must still be reported: its
+contents are parsed, and a comment inside one does leave the export.
 
 ### Lossy conversion
 

@@ -127,15 +127,31 @@ const CASES = [
    * Until 1.1.0 a \zwnj{} separated the pair, which read well until an author's
    * own "=" or "~" closed around it: entities are not expanded inside verbatim, so
    * Org printed "\zwnj{}" to the reader. The characters now survive without one.
+   *
+   * The "]]" is written with backslash escapes. It was "&#93;&#93;" until 1.1.0,
+   * which stopped constructing anything once md2org left character references
+   * alone — the fixture was relying on the decoding it was not there to test.
    */
   { name: "]] in a description keeps every character",
-    md: "[a&#93;&#93;b](/u)", text: "a]" },
+    md: "[a\\]\\]b](/u)", text: "a]" },
 
   { name: "]] from a code span keeps every character",
     md: "[see `a]]b` now](/u)", text: "see" },
 
   { name: "a description ending in ] keeps every character",
     md: "[a\\]](/u)", text: "a]" },
+
+  /*
+   * "\#" is CommonMark's escape for a literal hash at line start. The parser
+   * consumes the backslash, and the bare "#" left behind is an Org comment, so
+   * Org drops the line from every backend. Every character is still in the file,
+   * which is why invariant 1 holds and only the footer can report it. Asserted
+   * here against a real Org exporter rather than inferred from the syntax
+   * document, because the whole claim is about what Org does.
+   */
+  { name: "an escaped hash is dropped by Org",
+    md: "Release notes.\n\n\\# not a heading, just a hash\n\nTail line.",
+    text: "Tail line.", absent: "not a heading" },
 
   /*
    * Entities, fed to the leak guard below rather than to an expectation. The
@@ -226,6 +242,16 @@ CASES.forEach((c, i) => {
       "org: " + JSON.stringify(org) +
       "\n         ASCII export " + JSON.stringify(a.ascii.trim()) +
       "\n         does not contain " + JSON.stringify(c.text));
+  }
+  /* The opposite assertion: content the export is expected to drop. Only the
+   * warned pass-through cases need it, where the point is that Org removes
+   * something and the footer is the only notice the reader gets. */
+  if (c.absent !== undefined) {
+    if (a.ascii.indexOf(c.absent) === -1) ok(c.name + " (dropped on export)");
+    else bad(c.name + " (dropped on export)",
+      "org: " + JSON.stringify(org) +
+      "\n         ASCII export " + JSON.stringify(a.ascii.trim()) +
+      "\n         still contains " + JSON.stringify(c.absent));
   }
 });
 

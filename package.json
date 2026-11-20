@@ -22,7 +22,7 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "license": "MIT",
+  "license": "0BSD AND BSD-2-Clause AND MIT",
   "keywords": [
     "markdown",
     "org",

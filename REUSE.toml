@@ -1,0 +1,71 @@
+version = 1
+SPDX-PackageName = "md2org"
+SPDX-PackageSupplier = "Nicholas Carroll"
+SPDX-PackageDownloadLocation = "https://github.com/nicholascarroll/md2org.js"
+
+# Everything not annotated below is original to md2org and is 0BSD.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Nicholas Carroll"
+SPDX-License-Identifier = "0BSD"
+
+# Forked commonmark.js (BSD-2-Clause, with an MIT polyfill) and the mdurl
+# package it bundles (MIT). md2org's fork patches are 0BSD.
+# docs/ and shortcut/ are built copies that also contain md2org's own code.
+[[annotations]]
+path = [
+  "src/vendor/commonmark.js",
+  "test/vendor-cmark-html.js",
+  "docs/md2org.js",
+  "shortcut/transform.js",
+  "shortcut/md2org.shortcut",
+]
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2014 John MacFarlane",
+  "Mathias Bynens",
+  "2015 Vitaly Puzrin, Alex Kocharin",
+  "2026 Nicholas Carroll",
+]
+SPDX-License-Identifier = "0BSD AND BSD-2-Clause AND MIT"
+
+# As above, plus upstream's entity table from the entities package.
+[[annotations]]
+path = [
+  "src/vendor/commonmark-entities.js",
+  "docs/md2org-entities.js",
+]
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2014 John MacFarlane",
+  "Mathias Bynens",
+  "2015 Vitaly Puzrin, Alex Kocharin",
+  "Felix Böhm",
+  "2026 Nicholas Carroll",
+]
+SPDX-License-Identifier = "0BSD AND BSD-2-Clause AND MIT"
+
+# Upstream licence texts, copied verbatim.
+[[annotations]]
+path = [
+  "src/vendor/LICENSE-commonmark",
+  "src/vendor/LICENSE-mdurl",
+  "src/vendor/LICENSE-entities",
+  "docs/third-party-licenses.txt",
+]
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2014 John MacFarlane",
+  "Mathias Bynens",
+  "2015 Vitaly Puzrin, Alex Kocharin",
+  "Felix Böhm",
+]
+SPDX-License-Identifier = "BSD-2-Clause AND MIT"
+
+# Third-party specifications, unmodified (specs/README.md).
+[[annotations]]
+path = ["specs/commonmark-0.31.2.txt", "specs/gfm-spec-0.29.txt"]
+precedence = "override"
+SPDX-FileCopyrightText = "John MacFarlane and contributors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"

@@ -131,4 +131,18 @@ I've tested on iOS 26.3.1(a) and 26.6.1 (iPhone 14).  If you hit this issue on y
 
 ## License
 
-MIT
+md2org is [0BSD](LICENSE), except for the third-party material below.
+
+`src/vendor/` bundles a modified copy of
+[commonmark.js](https://github.com/commonmark/commonmark.js), Copyright (c)
+2014, John MacFarlane, under the BSD 2-Clause License. It includes a polyfill by
+Mathias Bynens under the MIT License, and bundles mdurl, Copyright (c) 2015
+Vitaly Puzrin, Alex Kocharin, under the MIT License.
+`src/vendor/commonmark-entities.js` also bundles entities, Copyright (c) Felix
+Böhm, under the BSD 2-Clause License. Their licence texts are in
+`src/vendor/LICENSE-commonmark`, `LICENSE-mdurl` and `LICENSE-entities`, which
+are distributed with the npm package. The built copies in `docs/` and
+`shortcut/` contain the same code.
+
+The specifications in `specs/` are third-party, under CC-BY-SA 4.0, and are not
+part of the npm package; see [specs/README.md](specs/README.md).

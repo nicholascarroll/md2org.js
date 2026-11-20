@@ -1,9 +1,9 @@
 /*
  * org-validate: checks that a string is structurally valid Org, following
- * specs/org-syntax-v2.org. Block delimiters must pair and nest, source blocks
- * need a language, lesser block bodies must be comma-quoted, and link paths may
- * not contain an unescaped "]". Applied to every case in the suite and to fuzzed
- * input.
+ * Org Syntax v2 (https://orgmode.org/worg/org-syntax.org). Block delimiters
+ * must pair and nest, source blocks need a language, lesser block bodies must
+ * be comma-quoted, and link paths may not contain an unescaped "]". Applied to
+ * every case in the suite and to fuzzed input.
  */
 
 /*

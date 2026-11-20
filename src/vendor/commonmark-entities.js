@@ -3,6 +3,8 @@
  *
  * Source:  commonmark.js 0.31.2, https://github.com/commonmark/commonmark.js
  * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)
+ * Bundles: mdurl, MIT (see src/vendor/LICENSE-mdurl);
+ *          entities, BSD-2-Clause (see src/vendor/LICENSE-entities)
  *
  * Identical to src/vendor/commonmark.js except that character references are
  * decoded. Used only by the CLI's -e option and the web page's checkbox; never

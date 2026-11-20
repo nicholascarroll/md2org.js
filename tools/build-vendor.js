@@ -329,6 +329,7 @@ const shipHeader = [
   " *",
   " * Source:  commonmark.js " + CM_VERSION + ", https://github.com/commonmark/commonmark.js",
   " * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)",
+  " * Bundles: mdurl, MIT (see src/vendor/LICENSE-mdurl)",
   " *",
   " * Built from lib/blocks.js with md2org's fork patches (tools/build-vendor.js),",
   " * and with upstream's entity table replaced by tools/entities-compact.js, which",
@@ -358,6 +359,8 @@ const entitiesHeader = [
   " *",
   " * Source:  commonmark.js " + CM_VERSION + ", https://github.com/commonmark/commonmark.js",
   " * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)",
+  " * Bundles: mdurl, MIT (see src/vendor/LICENSE-mdurl);",
+  " *          entities, BSD-2-Clause (see src/vendor/LICENSE-entities)",
   " *",
   " * Identical to src/vendor/commonmark.js except that character references are",
   " * decoded. Used only by the CLI's -e option and the web page's checkbox; never",
@@ -393,6 +396,10 @@ fs.writeFileSync(path.join(here, "test/vendor-cmark-html.js"),
 
 fs.copyFileSync(path.join(tmp, "node_modules/commonmark/LICENSE"),
   path.join(here, "src/vendor/LICENSE-commonmark"));
+fs.copyFileSync(path.join(tmp, "node_modules/mdurl/LICENSE"),
+  path.join(here, "src/vendor/LICENSE-mdurl"));
+fs.copyFileSync(path.join(tmp, "node_modules/entities/LICENSE"),
+  path.join(here, "src/vendor/LICENSE-entities"));
 
 console.log("\nregenerated src/vendor/commonmark.js and test/vendor-cmark-html.js");
 console.log("now run: node build.js && npm test");

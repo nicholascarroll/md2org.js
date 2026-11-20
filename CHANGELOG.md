@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+- LICENSE is plain 0BSD; the third-party notices moved to the README.
+- specs/org-syntax-v2.org is linked from specs/README.md rather than copied.
+
+### Changed
+- Relicensed from MIT to 0BSD.
+
+### Fixed
+- Added missing notices for mdurl (MIT) and entities (BSD-2-Clause).
 
 ## [1.1.0] — 2026-10-03
 

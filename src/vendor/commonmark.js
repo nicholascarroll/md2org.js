@@ -3,6 +3,7 @@
  *
  * Source:  commonmark.js 0.31.2, https://github.com/commonmark/commonmark.js
  * License: BSD-2-Clause (see src/vendor/LICENSE-commonmark)
+ * Bundles: mdurl, MIT (see src/vendor/LICENSE-mdurl)
  *
  * Built from lib/blocks.js with md2org's fork patches (tools/build-vendor.js),
  * and with upstream's entity table replaced by tools/entities-compact.js, which
